@@ -1,0 +1,13 @@
+name: chess
+version: 0.1.0
+
+authors:
+  - Dru Jensen <drujensen@gmail.com>
+
+targets:
+  chess:
+    main: src/chess.cr
+
+crystal: 0.30.0
+
+license: MIT
