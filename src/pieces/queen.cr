@@ -3,6 +3,7 @@ require "./chessman.cr"
 class Queen < ChessMan
   def initialize(@white = true)
     @character = white ? '♛' : '♕'
+    @value = 9
   end
 
   def valid?(board : Board, from_x, from_y, to_x, to_y)

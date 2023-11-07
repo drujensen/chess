@@ -2,6 +2,9 @@ require "./pieces/*"
 
 class Board
   property pieces : Array(Array(ChessMan))
+  property white_captured : Array(ChessMan)
+  property black_captured : Array(ChessMan)
+  property moves : Array(String)
 
   def initialize
     @pieces = Array(Array(ChessMan)).new(8) do
@@ -9,6 +12,9 @@ class Board
         Empty.new
       end
     end
+    @black_captured = Array(ChessMan).new
+    @white_captured = Array(ChessMan).new
+    @moves = Array(String).new
     init_black
     init_white
   end
@@ -83,9 +89,31 @@ class Board
 
     # save the lost piece
     lost = @pieces[to_y][to_x]
+    if lost.is_a?(Empty)
+      lost = nil
+    else
+      lost.white ? @white_captured << lost : @black_captured << lost
+    end
+
+    # save move
+    @moves << move
 
     # move to new location
     @pieces[to_y][to_x] = @pieces[from_y][from_x]
+    @pieces[to_y][to_x].moved = true
+
+    # if king side castle then move rook
+    if @pieces[to_y][to_x].is_a?(King) && (from_x - to_x).abs == 2
+      if to_x == 6
+        @pieces[to_y][5] = @pieces[to_y][7]
+        @pieces[to_y][5].moved = true
+        @pieces[to_y][7] = Empty.new
+      elsif to_x == 2
+        @pieces[to_y][3] = @pieces[to_y][0]
+        @pieces[to_y][3].moved = true
+        @pieces[to_y][0] = Empty.new
+      end
+    end
 
     # empty old location
     @pieces[from_y][from_x] = Empty.new
@@ -99,6 +127,7 @@ class Board
   end
 
   def draw
+    puts "black: #{white_captured.sum(&.value)} white: #{black_captured.sum(&.value)}"
     puts "\e[0m  a b c d e f g h \e[0m"
     puts "\e[0m8 \e[48;5;240m#{pieces[7][0].draw}\e[48;5;243m#{pieces[7][1].draw}\e[48;5;240m#{pieces[7][2].draw}\e[48;5;243m#{pieces[7][3].draw}\e[48;5;240m#{pieces[7][4].draw}\e[48;5;243m#{pieces[7][5].draw}\e[48;5;240m#{pieces[7][6].draw}\e[48;5;243m#{pieces[7][7].draw}\e[0m 8"
     puts "\e[0m7 \e[48;5;243m#{pieces[6][0].draw}\e[48;5;240m#{pieces[6][1].draw}\e[48;5;243m#{pieces[6][2].draw}\e[48;5;240m#{pieces[6][3].draw}\e[48;5;243m#{pieces[6][4].draw}\e[48;5;240m#{pieces[6][5].draw}\e[48;5;243m#{pieces[6][6].draw}\e[48;5;240m#{pieces[6][7].draw}\e[0m 7"
