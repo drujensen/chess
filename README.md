@@ -1,22 +1,29 @@
-# checkers
+# chess
 
-TODO: Write a description here
+A chess game written in crystal.
 
 ## Installation
 
-TODO: Write installation instructions here
+clone the repository
+
+## Build
+
+```
+shards build
+```
 
 ## Usage
 
-TODO: Write usage instructions here
+```
+./bin/chess
+```
 
 ## Development
 
-TODO: Write development instructions here
 
 ## Contributing
 
-1. Fork it (<https://github.com/your-github-user/checkers/fork>)
+1. Fork it (<https://github.com/drujensen/chess/fork>)
 2. Create your feature branch (`git checkout -b my-new-feature`)
 3. Commit your changes (`git commit -am 'Add some feature'`)
 4. Push to the branch (`git push origin my-new-feature`)
@@ -24,4 +31,4 @@ TODO: Write development instructions here
 
 ## Contributors
 
-- [Dru Jensen](https://github.com/your-github-user) - creator and maintainer
+- [Dru Jensen](https://github.com/drujensen) - creator and maintainer
