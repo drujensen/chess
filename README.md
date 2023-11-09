@@ -1,13 +1,41 @@
-# chess
+# Chess
 
-A chess game written in crystal.
+Play a game of chess against ChatGPT 4 Turbo.
+
+Written in the Crystal language.
+
+This is a terminal app that allows you to play chess against
+the best player in the world. Lucky for you, you get to play
+white. ChatGPT will play black.
+
+You may need to zoom in to see the board properly.
 
 ## Installation
 
-clone the repository
+You will need an API Key from OpenAI to use this app.
+```
+export OPENAI_API_KEY=your-api-key
+```
+
+Then clone the repository:
+```
+git clone https://github.com/drujensen/chess.git
+```
+
+Install crystal language:
+MacOS:
+```
+brew install crystal
+```
+
+Linux:
+```
+curl -fsSL https://crystal-lang.org/install.sh | sudo bash
+```
 
 ## Build
 
+There are no dependencies to install. Just build the app:
 ```
 shards build
 ```
@@ -18,8 +46,25 @@ shards build
 ./bin/chess
 ```
 
+To move, use long algebraic notation. For example, to move the pawn:
+`e2e4`
+To move the knight:
+`g1f3`
+
 ## Development
 
+List of things to contribute:
+- [x] Draw chess board using unicode characters
+- [x] Handle validation of basic chess moves
+- [x] Support long algebraic notation
+- [ ] Handle validation of moves that put you in check
+- [x] Handle castling
+- [ ] Handle en passant
+- [ ] Handle pawn promotion (algebraic notation suffix optional)
+- [ ] Handle checkmate
+- [ ] Handle stalemate
+- [ ] Handle draw by different rules
+- [ ] Add time controls?
 
 ## Contributing
 
