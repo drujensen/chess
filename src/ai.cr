@@ -2,12 +2,14 @@ require "json"
 require "http/client"
 
 class AI
+  property prev_tool_id : String?
   URL   = "https://api.openai.com/v1/chat/completions"
   MODEL = "gpt-4-1106-preview"
 
   def initialize
     @api_key = ENV["OPENAI_API_KEY"]
     @messages = [] of NamedTuple(role: String, content: String) | NamedTuple(tool_call_id: String, role: String, name: String, content: String) | JSON::Any
+    @prev_tool_id = nil
 
     @messages.push(
       {
@@ -17,16 +19,15 @@ class AI
     )
   end
 
-  def prev_move(tool_call_id : String, move : String)
-    @messages.push({
-      tool_call_id: tool_call_id,
-      role:         "tool",
-      name:         "move",
-      content:      move,
-    })
-  end
-
   def next_move(moves : Array(String), error : String? = nil)
+    if tool_id = @prev_tool_id
+      @messages.push({
+        tool_call_id: tool_id,
+        role:         "tool",
+        name:         "move",
+        content:      moves.last,
+      })
+    end
     @messages.push({role: "system", content: "error: #{error}"}) unless error.empty?
     body = {
       model:       MODEL,
@@ -76,11 +77,11 @@ class AI
 
     if tool_calls.nil?
       puts message["content"]
+      return next_move(moves, error)
     end
 
     tool = tool_calls[tool_calls.size - 1]
     if tool["function"]["name"] == "moves"
-      puts "function moves called"
       @messages.push({
         tool_call_id: tool["id"].to_s,
         role:         "tool",
@@ -89,8 +90,8 @@ class AI
       })
       return next_move(moves, error)
     else
-      puts "function move called"
-      return {tool_call_id: tool["id"].to_s, move: JSON.parse(tool["function"]["arguments"].to_s)["nextMove"].to_s.strip}
+      @prev_tool_id = tool["id"].to_s
+      return JSON.parse(tool["function"]["arguments"].to_s)["nextMove"].to_s.strip
     end
   end
 

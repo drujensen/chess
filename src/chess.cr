@@ -7,14 +7,12 @@ class Chess
   property ai : AI
   property white : Bool
   property error_count : Int32
-  property move : String?
   property last_move : NamedTuple(tool_call_id: String, move: String)? = nil
 
   def initialize
     @board = Board.new
     @ai = AI.new
     @white = true
-    @move = ""
     @error_count = 0
   end
 
@@ -22,20 +20,12 @@ class Chess
     puts "#{@white ? "white" : "black"}'s turn: "
     error = ""
     if @white
-      @move = gets
+      move = gets
     else
-      if last_move = @last_move
-        if move = @move
-          ai.prev_move(last_move["tool_call_id"], move)
-        end
-      end
-      @last_move = ai.next_move(board.moves, error)
-      if last_move = @last_move
-        @move = last_move["move"]
-      end
-      puts @move
+      move = ai.next_move(board.moves, error)
+      puts move
     end
-    if move = @move
+    if move
       if board.turn(move, @white)
         @white = !@white
         @error_count = 0
