@@ -4,41 +4,49 @@ require "./ai.cr"
 class Chess
   VERSION = "0.1.0"
   property board : Board
+  property ai : AI
   property white : Bool
+  property error_count : Int32
 
   def initialize
-    @white = true
     @board = Board.new
     @ai = AI.new
+    @white = true
+    @error_count = 0
   end
 
   def next_turn
-    puts "#{white ? "white" : "black"}'s turn: "
+    puts "#{@white ? "white" : "black"}'s turn: "
     move = ""
     error = ""
-    if white
+    if @white
       move = gets
     else
-      move = @ai.next_move(@board.moves, error)
+      move = ai.next_move(board.moves, error)
       puts move
     end
     if move
-      if board.turn(move, white)
-        @white = !white
+      if board.turn(move, @white)
+        @white = !@white
+        @error_count = 0
       else
         error = "invalid move: #{move}. try again!"
+        @error_count += 1
         puts error
       end
+    end
+    if @error_count > 3
+      raise "too many errors."
     end
   end
 
   def run
     while true
-      board.draw
+      @board.draw
       next_turn
     end
   rescue ex
-    board.draw
+    @board.draw
     puts ex.message
   end
 end

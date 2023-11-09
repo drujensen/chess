@@ -2,42 +2,50 @@ require "json"
 require "http/client"
 
 class AI
-  BASE_URL = "https://api.openai.com/v1"
-  MODEL    = "gpt-4-1106-preview"
+  URL   = "https://api.openai.com/v1/chat/completions"
+  MODEL = "gpt-4-1106-preview"
 
   def initialize
     @api_key = ENV["OPENAI_API_KEY"]
+    @messages = [] of NamedTuple(role: String, content: String) | NamedTuple(tool_call_id: String, role: String, name: String, content: String)
+
+    @messages.push(
+      {
+        role:    "user",
+        content: "you are playing a game of chess. you are black. what is your next move?",
+      }
+    )
   end
 
   def next_move(moves : Array(String), error : String? = nil)
-    url = "#{BASE_URL}/chat/completions"
-
-    content = "let's play a game of chess! I'm white and you are black. I always play first.\n"
-    content += "oh no! it looks like your last move was invalid: #{error}\n" unless error.empty?
-    content += "here is a list of all the moves played so far:\n"
-    content += "#{moves.join(", ")}.\n"
-    content += "what is your next move?"
-
+    @messages.push({role: "system", content: "error: #{error}"}) unless error.empty?
     body = {
-      model:    MODEL,
-      messages: [
+      model:       MODEL,
+      temperature: 2.0,
+      messages:    @messages,
+      tools:       [
         {
-          role:    "user",
-          content: content,
+          type:     "function",
+          function: {
+            name:        "moves",
+            description: "list of moves played so far",
+            parameters:  {
+              type:       "object",
+              properties: {} of String => String,
+            },
+          },
         },
-      ],
-      tools: [
         {
           type:     "function",
           function: {
             name:        "move",
-            description: "A function that plays the next move in a chess game.",
+            description: "play the next move",
             parameters:  {
               type:       "object",
               properties: {
                 nextMove: {
                   type:        "string",
-                  description: "The next move to play in standard chess notation i.e. e2e4",
+                  description: "long algebraic notation i.e. e2e4",
                 },
               },
             },
@@ -46,12 +54,32 @@ class AI
       ],
       tool_choice: "auto",
     }.to_json
-
-    response = HTTP::Client.post(url, headers: build_headers, body: body)
+    puts body
+    response = HTTP::Client.post(URL, headers: build_headers, body: body)
 
     result = handle_response(response)
+    puts result
 
-    move = JSON.parse(result["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"].to_s)["nextMove"]
+    message = result["choices"][0]["message"]
+
+    if message["tool_calls"].size == 0
+      raise "Error: no tool calls"
+    end
+
+    if message["tool_calls"][0]["function"]["name"] == "moves"
+      puts "function moves called"
+      tool_id = message["tool_calls"][0]["function"]["tool_call_id"].to_s
+      @messages.push({
+        tool_call_id: tool_id.to_s,
+        role:         "tool",
+        name:         "moves",
+        content:      "#{moves.join(", ")}",
+      })
+      return next_move(moves, error)
+    else
+      puts "function move called"
+      move = JSON.parse(message["tool_calls"][0]["function"]["arguments"].to_s)["nextMove"]
+    end
 
     return move.to_s.strip
   end

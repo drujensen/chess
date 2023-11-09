@@ -96,7 +96,7 @@ class Board
     end
 
     # save move
-    @moves << move
+    @moves << "#{white ? "w" : "b"}: #{move}"
 
     # move to new location
     @pieces[to_y][to_x] = @pieces[from_y][from_x]
