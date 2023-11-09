@@ -26,6 +26,11 @@ class Chess
       puts move
     end
     if move
+      if @white && !(move =~ /^\D\d\D\d$/)
+        puts ai.chat(board.moves, move)
+        return
+      end
+
       if board.turn(move, @white)
         @white = !@white
         @error_count = 0

@@ -13,19 +13,53 @@ class AI
 
     @messages.push(
       {
-        role:    "user",
-        content: "you are playing a game of chess against Magnus Carlson. you are black. do not ask questions. what is your next move?",
+        role:    "system",
+        content: "you are playing a game of chess against a human. the human is white and you are black. you may call the moves function to get the list of moves played so far and call move to take your turn",
       }
     )
   end
 
-  def next_move(moves : Array(String), error : String? = nil)
+  def chat(moves : Array(String), text : String)
     if tool_id = @prev_tool_id
+      @prev_tool_id = nil
       @messages.push({
         tool_call_id: tool_id,
         role:         "tool",
         name:         "move",
         content:      moves.last,
+      })
+    end
+
+    @messages.push({role: "user", content: text})
+    body = {
+      model:       MODEL,
+      temperature: 1.0,
+      messages:    @messages,
+    }.to_json
+
+    response = HTTP::Client.post(URL, headers: build_headers, body: body)
+    result = handle_response(response)
+    puts result
+
+    choices = result["choices"]
+    message = choices[choices.size - 1]["message"]["content"]
+
+    return message
+  end
+
+  def next_move(moves : Array(String), error : String? = nil)
+    if tool_id = @prev_tool_id
+      @prev_tool_id = nil
+      @messages.push({
+        tool_call_id: tool_id,
+        role:         "tool",
+        name:         "move",
+        content:      moves.last,
+      })
+    else
+      @messages.push({
+        role:    "user",
+        content: "I played #{moves.last} as my first move.  your turn.",
       })
     end
     @messages.push({role: "system", content: "error: #{error}"}) unless error.empty?
@@ -71,14 +105,15 @@ class AI
 
     choices = result["choices"]
     message = choices[choices.size - 1]["message"]
-    @messages.push(message)
 
-    tool_calls = message["tool_calls"]
+    tool_calls = message["tool_calls"]?
 
     if tool_calls.nil?
       puts message["content"]
       return next_move(moves, error)
     end
+
+    @messages.push(message)
 
     tool = tool_calls[tool_calls.size - 1]
     if tool["function"]["name"] == "moves"
