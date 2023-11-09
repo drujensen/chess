@@ -20,6 +20,7 @@ class Chess
       move = gets
     else
       move = @ai.next_move(@board.moves, error)
+      puts move
     end
     if move
       if board.turn(move, white)
