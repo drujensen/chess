@@ -60,15 +60,16 @@ class AI
     result = handle_response(response)
     puts result
 
-    message = result["choices"][0]["message"]
+    tool_calls = result["choices"][0]["message"]["tool_calls"]
 
-    if message["tool_calls"].size == 0
+    if tool_calls.nil?
       raise "Error: no tool calls"
     end
 
-    if message["tool_calls"][0]["function"]["name"] == "moves"
+    tool = tool_calls[0]["function"]
+    if tool["name"] == "moves"
       puts "function moves called"
-      tool_id = message["tool_calls"][0]["function"]["tool_call_id"].to_s
+      tool_id = tool["tool_call_id"].to_s
       @messages.push({
         tool_call_id: tool_id.to_s,
         role:         "tool",
@@ -78,10 +79,8 @@ class AI
       return next_move(moves, error)
     else
       puts "function move called"
-      move = JSON.parse(message["tool_calls"][0]["function"]["arguments"].to_s)["nextMove"]
+      return JSON.parse(tool["arguments"].to_s)["nextMove"].to_s.strip
     end
-
-    return move.to_s.strip
   end
 
   private def build_headers(extra_headers : HTTP::Headers? = nil)
