@@ -9,7 +9,6 @@ class AI
   def initialize
     @api_key = ENV["OPENAI_API_KEY"]
     @messages = [] of NamedTuple(role: String, content: String) | NamedTuple(tool_call_id: String, role: String, name: String, content: String) | JSON::Any
-    @prev_tool_id = nil
 
     @messages.push(
       {
@@ -20,16 +19,6 @@ class AI
   end
 
   def chat(moves : Array(String), text : String)
-    if tool_id = @prev_tool_id
-      @prev_tool_id = nil
-      @messages.push({
-        tool_call_id: tool_id,
-        role:         "tool",
-        name:         "move",
-        content:      moves.last,
-      })
-    end
-
     @messages.push({role: "user", content: text})
     body = {
       model:       MODEL,
@@ -48,20 +37,11 @@ class AI
   end
 
   def next_move(moves : Array(String), error : String? = nil)
-    if tool_id = @prev_tool_id
-      @prev_tool_id = nil
-      @messages.push({
-        tool_call_id: tool_id,
-        role:         "tool",
-        name:         "move",
-        content:      moves.last,
-      })
-    else
-      @messages.push({
-        role:    "user",
-        content: "I played #{moves.last} as my first move.  your turn.",
-      })
-    end
+    @messages.push({
+      role:    "user",
+      content: "I played #{moves.last}.  your turn.",
+    })
+
     @messages.push({role: "system", content: "error: #{error}"}) unless error.empty?
     body = {
       model:       MODEL,
@@ -116,16 +96,25 @@ class AI
     @messages.push(message)
 
     tool = tool_calls[tool_calls.size - 1]
+    tool_id = tool["id"].to_s
+
     if tool["function"]["name"] == "moves"
       @messages.push({
-        tool_call_id: tool["id"].to_s,
+        tool_call_id: tool_id,
         role:         "tool",
         name:         "moves",
         content:      "#{moves.join(", ")}",
       })
+
       return next_move(moves, error)
     else
-      @prev_tool_id = tool["id"].to_s
+      @messages.push({
+        tool_call_id: tool_id,
+        role:         "tool",
+        name:         "move",
+        content:      "success",
+      })
+
       return JSON.parse(tool["function"]["arguments"].to_s)["nextMove"].to_s.strip
     end
   end
