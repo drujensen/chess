@@ -7,21 +7,30 @@ class AI
 
   def initialize
     @api_key = ENV["OPENAI_API_KEY"]
-    @messages = [] of NamedTuple(role: String, content: String) | NamedTuple(tool_call_id: String, role: String, name: String, content: String)
+    @messages = [] of NamedTuple(role: String, content: String) | NamedTuple(tool_call_id: String, role: String, name: String, content: String) | JSON::Any
 
     @messages.push(
       {
         role:    "user",
-        content: "you are playing a game of chess. you are black. what is your next move?",
+        content: "you are playing a game of chess against Magnus Carlson. you are black. do not ask questions. what is your next move?",
       }
     )
+  end
+
+  def prev_move(tool_call_id : String, move : String)
+    @messages.push({
+      tool_call_id: tool_call_id,
+      role:         "tool",
+      name:         "move",
+      content:      move,
+    })
   end
 
   def next_move(moves : Array(String), error : String? = nil)
     @messages.push({role: "system", content: "error: #{error}"}) unless error.empty?
     body = {
       model:       MODEL,
-      temperature: 2.0,
+      temperature: 1.0,
       messages:    @messages,
       tools:       [
         {
@@ -54,24 +63,26 @@ class AI
       ],
       tool_choice: "auto",
     }.to_json
-    puts body
-    response = HTTP::Client.post(URL, headers: build_headers, body: body)
 
+    response = HTTP::Client.post(URL, headers: build_headers, body: body)
     result = handle_response(response)
     puts result
 
-    tool_calls = result["choices"][0]["message"]["tool_calls"]
+    choices = result["choices"]
+    message = choices[choices.size - 1]["message"]
+    @messages.push(message)
+
+    tool_calls = message["tool_calls"]
 
     if tool_calls.nil?
-      raise "Error: no tool calls"
+      puts message["content"]
     end
 
-    tool = tool_calls[0]["function"]
-    if tool["name"] == "moves"
+    tool = tool_calls[tool_calls.size - 1]
+    if tool["function"]["name"] == "moves"
       puts "function moves called"
-      tool_id = tool["tool_call_id"].to_s
       @messages.push({
-        tool_call_id: tool_id.to_s,
+        tool_call_id: tool["id"].to_s,
         role:         "tool",
         name:         "moves",
         content:      "#{moves.join(", ")}",
@@ -79,7 +90,7 @@ class AI
       return next_move(moves, error)
     else
       puts "function move called"
-      return JSON.parse(tool["arguments"].to_s)["nextMove"].to_s.strip
+      return {tool_call_id: tool["id"].to_s, move: JSON.parse(tool["function"]["arguments"].to_s)["nextMove"].to_s.strip}
     end
   end
 
