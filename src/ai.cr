@@ -28,7 +28,6 @@ class AI
 
     response = HTTP::Client.post(URL, headers: build_headers, body: body)
     result = handle_response(response)
-    puts result
 
     choices = result["choices"]
     message = choices[choices.size - 1]["message"]["content"]
@@ -81,7 +80,6 @@ class AI
 
     response = HTTP::Client.post(URL, headers: build_headers, body: body)
     result = handle_response(response)
-    puts result
 
     choices = result["choices"]
     message = choices[choices.size - 1]["message"]
