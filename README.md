@@ -46,7 +46,7 @@ shards build
 ./bin/chess
 ```
 
-To move, use long algebraic notation. 
+To move, use long algebraic notation.
 For example, to move the pawn: `e2e4`
 To move the knight: `g1f3`
 
