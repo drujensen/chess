@@ -2,8 +2,9 @@ require "./chessman.cr"
 
 class King < ChessMan
   def initialize(@white = true)
+    super
     @character = white ? '♚' : '♔'
-    @value = 1000
+    @value = 4
   end
 
   def valid?(board : Board, from_x, from_y, to_x, to_y)

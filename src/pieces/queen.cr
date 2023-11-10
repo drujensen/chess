@@ -2,6 +2,7 @@ require "./chessman.cr"
 
 class Queen < ChessMan
   def initialize(@white = true)
+    super
     @character = white ? '♛' : '♕'
     @value = 9
   end

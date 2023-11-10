@@ -2,6 +2,7 @@ require "./chessman.cr"
 
 class Rook < ChessMan
   def initialize(@white = true)
+    super
     @character = white ? '♜' : '♖'
     @value = 5
   end

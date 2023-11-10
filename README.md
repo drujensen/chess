@@ -46,10 +46,9 @@ shards build
 ./bin/chess
 ```
 
-To move, use long algebraic notation. For example, to move the pawn:
-`e2e4`
-To move the knight:
-`g1f3`
+To move, use long algebraic notation. 
+For example, to move the pawn: `e2e4`
+To move the knight: `g1f3`
 
 ## Development
 
@@ -57,13 +56,13 @@ List of things to contribute:
 - [x] Draw chess board using unicode characters
 - [x] Handle validation of basic chess moves
 - [x] Support long algebraic notation
-- [ ] Handle validation of moves that put you in check
 - [x] Handle castling
-- [ ] Handle en passant
-- [ ] Handle pawn promotion (algebraic notation suffix optional)
+- [x] Handle en passant
+- [x] Handle pawn promotion - queen only
+- [ ] Handle check
 - [ ] Handle checkmate
 - [ ] Handle stalemate
-- [ ] Handle draw by different rules
+- [ ] Handle draw
 - [ ] Add time controls?
 
 ## Contributing

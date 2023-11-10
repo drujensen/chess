@@ -90,11 +90,6 @@ class Board
 
     # save the lost piece
     lost = @pieces[to_y][to_x]
-    if lost.is_a?(Empty)
-      lost = nil
-    else
-      lost.white ? @white_captured << lost : @black_captured << lost
-    end
 
     # save move
     @moves << "#{white ? "w" : "b"}: #{move}"
@@ -114,6 +109,35 @@ class Board
         @pieces[to_y][3].moved = true
         @pieces[to_y][0] = Empty.new
       end
+    end
+
+    # if pawn promotion then promote to queen
+    if @pieces[to_y][to_x].is_a?(Pawn) && (to_y == 0 || to_y == 7)
+      @pieces[to_y][to_x] = Queen.new(white)
+    end
+
+    # if pawn double move then set en passant
+    if @pieces[to_y][to_x].is_a?(Pawn) && (from_y - to_y).abs == 2
+      @pieces[to_y][to_x].en_passant = true
+    end
+
+    # if capturing en passant
+    if white
+      if from_y == 4 && to_y == 5 && (from_x - to_x).abs == 1
+        lost = @pieces[4][to_x]
+        @pieces[4][to_x] = Empty.new
+      end
+    else
+      if from_y == 3 && to_y == 2 && (from_x - to_x).abs == 1
+        lost = @pieces[3][to_x]
+        @pieces[3][to_x] = Empty.new
+      end
+    end
+
+    if lost.is_a?(Empty)
+      lost = nil
+    else
+      lost.white ? @white_captured << lost : @black_captured << lost
     end
 
     # empty old location

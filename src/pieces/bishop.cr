@@ -2,6 +2,7 @@ require "./chessman.cr"
 
 class Bishop < ChessMan
   def initialize(@white = true)
+    super
     @character = white ? '♝' : '♗'
     @value = 3
   end
