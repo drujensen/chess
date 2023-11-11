@@ -11,6 +11,7 @@ class Chess
 
   def initialize
     @board = Board.new
+    @board.setup
     @ai = AI.new
     @white = true
     @error_count = 0

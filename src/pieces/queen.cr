@@ -15,10 +15,10 @@ class Queen < ChessMan
     (0..from_x - 1).reverse_each do |x|
       y += 1
       break if y > 7
-      to_w = board.pieces[y][x].white
-      if to_w == nil
+      to_color = board.pieces[y][x].white
+      if to_color == nil
         spots << Spot.new(x, y)
-      elsif to_w == !white
+      elsif to_color == !white
         spots << Spot.new(x, y)
         break
       else
@@ -30,10 +30,10 @@ class Queen < ChessMan
     (from_x + 1..7).each do |x|
       y += 1
       break if y > 7
-      to_w = board.pieces[y][x].white
-      if to_w == nil
+      to_color = board.pieces[y][x].white
+      if to_color == nil
         spots << Spot.new(x, y)
-      elsif to_w == !white
+      elsif to_color == !white
         spots << Spot.new(x, y)
         break
       else
@@ -45,10 +45,10 @@ class Queen < ChessMan
     (0..from_x - 1).reverse_each do |x|
       y -= 1
       break if y < 0
-      to_w = board.pieces[y][x].white
-      if to_w == nil
+      to_color = board.pieces[y][x].white
+      if to_color == nil
         spots << Spot.new(x, y)
-      elsif to_w == !white
+      elsif to_color == !white
         spots << Spot.new(x, y)
         break
       else
@@ -60,10 +60,10 @@ class Queen < ChessMan
     (from_x + 1..7).each do |x|
       y -= 1
       break if y < 0
-      to_w = board.pieces[y][x].white
-      if to_w == nil
+      to_color = board.pieces[y][x].white
+      if to_color == nil
         spots << Spot.new(x, y)
-      elsif to_w == !white
+      elsif to_color == !white
         spots << Spot.new(x, y)
         break
       else
@@ -72,10 +72,10 @@ class Queen < ChessMan
     end
 
     (0..from_x - 1).reverse_each do |x|
-      to_w = board.pieces[from_y][x].white
-      if to_w == nil
+      to_color = board.pieces[from_y][x].white
+      if to_color == nil
         spots << Spot.new(x, from_y)
-      elsif to_w == !white
+      elsif to_color == !white
         spots << Spot.new(x, from_y)
         break
       else
@@ -84,10 +84,10 @@ class Queen < ChessMan
     end
 
     (from_x + 1..7).each do |x|
-      to_w = board.pieces[from_y][x].white
-      if to_w == nil
+      to_color = board.pieces[from_y][x].white
+      if to_color == nil
         spots << Spot.new(x, from_y)
-      elsif to_w == !white
+      elsif to_color == !white
         spots << Spot.new(x, from_y)
         break
       else
@@ -96,10 +96,10 @@ class Queen < ChessMan
     end
 
     (0..from_y - 1).reverse_each do |y|
-      to_w = board.pieces[y][from_x].white
-      if to_w == nil
+      to_color = board.pieces[y][from_x].white
+      if to_color == nil
         spots << Spot.new(from_x, y)
-      elsif to_w == !white
+      elsif to_color == !white
         spots << Spot.new(from_x, y)
         break
       else
@@ -108,10 +108,10 @@ class Queen < ChessMan
     end
 
     (from_y + 1..7).each do |y|
-      to_w = board.pieces[y][from_x].white
-      if to_w == nil
+      to_color = board.pieces[y][from_x].white
+      if to_color == nil
         spots << Spot.new(from_x, y)
-      elsif to_w == !white
+      elsif to_color == !white
         spots << Spot.new(from_x, y)
         break
       else

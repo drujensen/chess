@@ -8,57 +8,21 @@ class Rook < ChessMan
   end
 
   def valid?(board : Board, from_x, from_y, to_x, to_y)
-    to_spot = Spot.new(to_x, to_y)
-    spots = [] of Spot
+    return false unless straight_move?(from_x, from_y, to_x, to_y)
+    path_clear?(board, from_x, from_y, to_x, to_y)
+  end
 
-    (0..from_x - 1).reverse_each do |x|
-      to_w = board.pieces[from_y][x].white
-      if to_w == nil
-        spots << Spot.new(x, from_y)
-      elsif to_w == !white
-        spots << Spot.new(x, from_y)
-        break
-      else
-        break
-      end
+  private def straight_move?(from_x, from_y, to_x, to_y)
+    from_x == to_x || from_y == to_y
+  end
+
+  private def path_clear?(board, from_x, from_y, to_x, to_y)
+    if from_x == to_x
+      range = from_y < to_y ? (from_y + 1...to_y) : (to_y + 1...from_y)
+      range.none? { |y| !board.pieces[y][from_x].is_a?(Empty) }
+    else
+      range = from_x < to_x ? (from_x + 1...to_x) : (to_x + 1...from_x)
+      range.none? { |x| !board.pieces[from_y][x].is_a?(Empty) }
     end
-
-    (from_x + 1..7).each do |x|
-      to_w = board.pieces[from_y][x].white
-      if to_w == nil
-        spots << Spot.new(x, from_y)
-      elsif to_w == !white
-        spots << Spot.new(x, from_y)
-        break
-      else
-        break
-      end
-    end
-
-    (0..from_y - 1).reverse_each do |y|
-      to_w = board.pieces[y][from_x].white
-      if to_w == nil
-        spots << Spot.new(from_x, y)
-      elsif to_w == !white
-        spots << Spot.new(from_x, y)
-        break
-      else
-        break
-      end
-    end
-
-    (from_y + 1..7).each do |y|
-      to_w = board.pieces[y][from_x].white
-      if to_w == nil
-        spots << Spot.new(from_x, y)
-      elsif to_w == !white
-        spots << Spot.new(from_x, y)
-        break
-      else
-        break
-      end
-    end
-
-    return spots.any? { |spot| spot == to_spot }
   end
 end

@@ -15,6 +15,9 @@ class Board
     @black_captured = Array(ChessMan).new
     @white_captured = Array(ChessMan).new
     @moves = Array(String).new
+  end
+
+  def setup
     init_black
     init_white
   end

@@ -8,19 +8,17 @@ class Knight < ChessMan
   end
 
   def valid?(board : Board, from_x, from_y, to_x, to_y)
-    to_spot = Spot.new(to_x, to_y)
-    to_w = board.pieces[to_y][to_x].white
+    # Calculate the difference in x and y coordinates
+    delta_x = (from_x - to_x).abs
+    delta_y = (from_y - to_y).abs
 
-    spots = [] of Spot
-    spots << Spot.new(from_x + 2, from_y + 1)
-    spots << Spot.new(from_x + 2, from_y - 1)
-    spots << Spot.new(from_x - 2, from_y + 1)
-    spots << Spot.new(from_x - 2, from_y - 1)
-    spots << Spot.new(from_x + 1, from_y + 2)
-    spots << Spot.new(from_x + 1, from_y - 2)
-    spots << Spot.new(from_x - 1, from_y + 2)
-    spots << Spot.new(from_x - 1, from_y - 2)
+    # Check if the target spot is occupied by a piece of the same color
+    target_piece = board.pieces[to_y][to_x]
+    if target_piece && target_piece.white == @white
+      return false
+    end
 
-    return spots.any? { |spot| spot == to_spot }
+    # A knight's move is valid if it moves 2 squares along one axis and 1 square along the other
+    (delta_x == 2 && delta_y == 1) || (delta_x == 1 && delta_y == 2)
   end
 end

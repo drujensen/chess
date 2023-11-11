@@ -8,49 +8,33 @@ class King < ChessMan
   end
 
   def valid?(board : Board, from_x, from_y, to_x, to_y)
-    to_spot = Spot.new(to_x, to_y)
+    dx = (to_x - from_x).abs
+    dy = (to_y - from_y).abs
 
-    spots = [] of Spot
-    spots << Spot.new(from_x - 1, from_y - 1)
-    spots << Spot.new(from_x - 1, from_y)
-    spots << Spot.new(from_x - 1, from_y + 1)
-    spots << Spot.new(from_x, from_y + 1)
-    spots << Spot.new(from_x, from_y - 1)
-    spots << Spot.new(from_x + 1, from_y - 1)
-    spots << Spot.new(from_x + 1, from_y)
-    spots << Spot.new(from_x + 1, from_y + 1)
+    # Check for standard king move (one square in any direction)
+    return true if dx <= 1 && dy <= 1
 
-    if @white && !@moved
-      # white king side
-      if !board.pieces[0][7].moved &&
-         board.pieces[0][6].is_a?(Empty) &&
-         board.pieces[0][5].is_a?(Empty)
-        spots << Spot.new(6, 0)
-      end
-      # white queen side
-      if !board.pieces[0][0].moved &&
-         board.pieces[0][1].is_a?(Empty) &&
-         board.pieces[0][2].is_a?(Empty) &&
-         board.pieces[0][3].is_a?(Empty)
-        spots << Spot.new(2, 0)
-      end
+    # Check for castling
+    return can_castle?(board, from_x, from_y, to_x, to_y) if !@moved && (dx == 2 && dy == 0)
+
+    false
+  end
+
+  private def can_castle?(board : Board, from_x, from_y, to_x, to_y)
+    return false unless [0, 7].includes?(from_y) # Castling only happens on the king's row
+
+    direction = to_x > from_x ? 1 : -1 # 1 for king side, -1 for queen side
+    rook_x = direction == 1 ? 7 : 0
+    rook = board.pieces[from_y][rook_x]
+
+    # Check if the rook has moved or the spaces between the king and rook are not empty
+    return false if !rook.is_a?(Rook) || rook.moved
+
+    # Check if the squares between the king and the rook are empty
+    (from_x + direction).step(to: rook_x - direction, by: direction).each do |x|
+      return false unless board.pieces[from_y][x].is_a?(Empty)
     end
 
-    if !@white && !@moved
-      # black king side
-      if !board.pieces[7][7].moved &&
-         board.pieces[7][6].is_a?(Empty) &&
-         board.pieces[7][5].is_a?(Empty)
-        spots << Spot.new(6, 7)
-      end
-      # black queen side
-      if !board.pieces[7][0].moved &&
-         board.pieces[7][1].is_a?(Empty) &&
-         board.pieces[7][2].is_a?(Empty) &&
-         board.pieces[7][3].is_a?(Empty)
-        spots << Spot.new(2, 7)
-      end
-    end
-    return spots.any? { |spot| spot == to_spot }
+    true
   end
 end
