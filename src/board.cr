@@ -60,11 +60,14 @@ class Board
   end
 
   def turn(move : String, white : Bool) : Bool
-    # move needs to be 4 characters long
-    return false unless move =~ /^\D\d\D\d$/
+    # move needs to be either 4 or 5 characters long (with 'x' for captures)
+    return false unless move =~ /^\D\d(x)?\D\d$/
+
+    # Remove 'x' if present
+    move = move.delete('x')
 
     # convert a-h to 0-7
-    from_x = move.chars[0].ord - 97
+    from_x = move.chars[0].ord - 'a'.ord
     return false if from_x < 0 || from_x > 7
 
     # convert 1-8 to 0-7
@@ -72,7 +75,7 @@ class Board
     return false if from_y < 0 || from_y > 7
 
     # convert a-h to 0-7
-    to_x = move.chars[2].ord - 97
+    to_x = move.chars[2].ord - 'a'.ord
     return false if to_x < 0 || to_x > 7
 
     # convert 1-8 to 0-7
