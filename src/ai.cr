@@ -26,8 +26,7 @@ class AI
       messages:    @messages,
     }.to_json
 
-    response = HTTP::Client.post(URL, headers: build_headers, body: body)
-    result = handle_response(response)
+    result = post_to_openai(body)
 
     choices = result["choices"]
     message = choices[choices.size - 1]["message"]["content"]
@@ -78,8 +77,7 @@ class AI
       tool_choice: "auto",
     }.to_json
 
-    response = HTTP::Client.post(URL, headers: build_headers, body: body)
-    result = handle_response(response)
+    result = post_to_openai(body)
 
     choices = result["choices"]
     message = choices[choices.size - 1]["message"]
@@ -117,6 +115,20 @@ class AI
     end
   end
 
+  private def post_to_openai(body)
+    retry_count = 0
+
+    while retry_count < 3
+      response = HTTP::Client.post(URL, headers: build_headers, body: body)
+      if response.success?
+        return JSON.parse(response.body)
+      else
+        retry_count += 1
+      end
+    end
+    raise "Failed to get response from OpenAI API"
+  end
+
   private def build_headers(extra_headers : HTTP::Headers? = nil)
     headers = HTTP::Headers{
       "Authorization" => "Bearer #{@api_key}",
@@ -126,13 +138,5 @@ class AI
       headers.add(key, value)
     end
     headers
-  end
-
-  private def handle_response(response : HTTP::Client::Response)
-    if response.success?
-      JSON.parse(response.body)
-    else
-      raise "Error: #{response.status_code} - #{response.body}"
-    end
   end
 end
