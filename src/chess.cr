@@ -26,7 +26,7 @@ class Chess
       puts move
     end
     if move
-      if @white && !(move =~ /^\D\d\D\d$/)
+      if @white && !(move =~ /^\D\d(x)?\D\d$/)
         puts ai.chat(board.moves, move)
         return
       end
