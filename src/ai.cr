@@ -4,7 +4,7 @@ require "http/client"
 class AI
   property prev_tool_id : String?
   URL   = "https://api.openai.com/v1/chat/completions"
-  MODEL = "gpt-4-1106-preview"
+  MODEL = "gpt-4o"
 
   def initialize
     @api_key = ENV["OPENAI_API_KEY"]
@@ -13,7 +13,7 @@ class AI
     @messages.push(
       {
         role:    "system",
-        content: "you are playing a game of chess against a human. the human is white and you are black. you may call the moves function to get the list of moves played so far and call move to take your turn",
+        content: "You are a chess grandmaster. You are playing a game of chess against a human. the human is white and you are black. There are 2 functions available to you.  moves: list of moves played so far. move: play the next move.",
       }
     )
   end
@@ -95,6 +95,7 @@ class AI
     tool_id = tool["id"].to_s
 
     if tool["function"]["name"] == "moves"
+      puts "moves called: #{moves.join(", ")}"
       @messages.push({
         tool_call_id: tool_id,
         role:         "tool",
@@ -104,6 +105,8 @@ class AI
 
       return next_move(moves, error)
     else
+      nextMove = JSON.parse(tool["function"]["arguments"].to_s)["nextMove"].to_s.strip
+      puts "move called: #{nextMove}"
       @messages.push({
         tool_call_id: tool_id,
         role:         "tool",
@@ -111,7 +114,7 @@ class AI
         content:      "success",
       })
 
-      return JSON.parse(tool["function"]["arguments"].to_s)["nextMove"].to_s.strip
+      return nextMove
     end
   end
 
