@@ -44,6 +44,22 @@ describe Pawn do
       white_pawn.valid?(board, from_x, from_y, to_x, to_y).should be_false
     end
 
+    it "does not allow white pawn to jump over a piece on a two-square advance" do
+      fresh_board = Board.new
+      jumping_pawn = Pawn.new(true)
+      fresh_board.pieces[1][4] = jumping_pawn
+      fresh_board.pieces[2][4] = Knight.new(true)
+      jumping_pawn.valid?(fresh_board, 4, 1, 4, 3).should be_false
+    end
+
+    it "does not allow black pawn to jump over a piece on a two-square advance" do
+      fresh_board = Board.new
+      jumping_pawn = Pawn.new(false)
+      fresh_board.pieces[6][4] = jumping_pawn
+      fresh_board.pieces[5][4] = Knight.new(false)
+      jumping_pawn.valid?(fresh_board, 4, 6, 4, 4).should be_false
+    end
+
     it "allows white pawn to capture black pawn en passant" do
       from_x, from_y = 4, 4
       to_x, to_y = 5, 5

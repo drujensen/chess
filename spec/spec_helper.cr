@@ -1,2 +1,6 @@
 require "spec"
 require "../src/board"
+require "../src/skill_level"
+require "../src/profile"
+require "../src/game_over"
+require "../src/saved_game"

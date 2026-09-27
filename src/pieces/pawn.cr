@@ -14,12 +14,12 @@ class Pawn < ChessMan
     spots = [] of Spot
     if white
       spots << Spot.new(from_x, from_y + 1) if to_color == nil
-      spots << Spot.new(from_x, from_y + 2) if to_color == nil && from_y == 1
+      spots << Spot.new(from_x, from_y + 2) if to_color == nil && from_y == 1 && board.pieces[from_y + 1][from_x].is_a?(Empty)
       spots << Spot.new(from_x + 1, from_y + 1) if to_color == !white
       spots << Spot.new(from_x - 1, from_y + 1) if to_color == !white
     else
       spots << Spot.new(from_x, from_y - 1) if to_color == nil
-      spots << Spot.new(from_x, from_y - 2) if to_color == nil && from_y == 6
+      spots << Spot.new(from_x, from_y - 2) if to_color == nil && from_y == 6 && board.pieces[from_y - 1][from_x].is_a?(Empty)
       spots << Spot.new(from_x + 1, from_y - 1) if to_color == !white
       spots << Spot.new(from_x - 1, from_y - 1) if to_color == !white
     end
