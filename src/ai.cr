@@ -7,9 +7,16 @@ require "./game_over.cr"
 class AI
   property prev_tool_id : String?
   property skill_level : SkillLevel
-  BASE_URL = ENV.fetch("OPENAI_BASE_URL", "http://localhost:11434/v1")
-  URL      = "#{BASE_URL}/chat/completions"
-  MODEL    = ENV.fetch("OPENAI_MODEL", "ornith:latest")
+  BASE_URL      = ENV.fetch("OPENAI_BASE_URL", "http://localhost:11434/v1")
+  BASE_URI      = URI.parse(BASE_URL)
+  ENDPOINT_PATH = "#{BASE_URI.path}/chat/completions"
+  MODEL         = ENV.fetch("OPENAI_MODEL", "ornith:latest")
+
+  # How long a single request may run before giving up - a slow or stuck
+  # local model would otherwise hang forever with no way to notice, since
+  # nothing else in this app puts any bound on how long "thinking" can take.
+  CONNECT_TIMEOUT = 10.seconds
+  TIMEOUT         = ENV.fetch("OPENAI_TIMEOUT", "300").to_i.seconds
 
   # resume_moves: long-algebraic moves already played (alternating white/
   # black, starting with white), when picking a previously-saved game back
@@ -17,12 +24,15 @@ class AI
   # is briefed with the game-so-far as its first message.
   def initialize(@skill_level : SkillLevel = SkillLevel::Advanced, resume_moves : Array(String)? = nil)
     @api_key = ENV["OPENAI_API_KEY"]?
+    @client = HTTP::Client.new(BASE_URI)
+    @client.connect_timeout = CONNECT_TIMEOUT
+    @client.read_timeout = TIMEOUT
     @messages = [] of NamedTuple(role: String, content: String) | NamedTuple(tool_call_id: String, role: String, name: String, content: String) | JSON::Any
 
     @messages.push(
       {
         role:    "system",
-        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is white and you are black. There are 4 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. move: play the next move. resign: give up the game if your position is truly lost (e.g. you're getting checkmated soon with no way out, or you've lost overwhelming material with no compensation) - only resign when it's genuinely hopeless, not just because you're slightly worse.",
+        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is white and you are black. There are 4 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. move: play the next move. resign: give up the game if your position is truly lost (e.g. you're getting checkmated soon with no way out, or you've lost overwhelming material with no compensation) - only resign when it's genuinely hopeless, not just because you're slightly worse. You have about #{TIMEOUT.total_seconds.to_i} seconds to reply each time you're asked something - don't overthink it, decide promptly and call the relevant function.",
       }
     )
 
@@ -49,6 +59,42 @@ class AI
   def record_move_resolution(instruction : String, move : String)
     @messages.push({role: "user", content: instruction})
     @messages.push({role: "assistant", content: "(played #{move})"})
+  end
+
+  # Explains, in plain language, why a flagged move from Stockfish's game
+  # analysis (see Analysis) was worse than the engine's suggestion - the
+  # model isn't asked to find or judge anything itself, only to narrate a
+  # concrete position + line the engine already worked out, which is a much
+  # more reliable task for a small local model than actually playing chess.
+  # Stateless like #resolve_move - its own throwaway message list, no tools.
+  def explain_move(
+    fen : String, played_san : String, better_san : String?,
+    pv_after : Array(String)?, pv_before : Array(String)?,
+  ) : String
+    prompt = String.build do |str|
+      str << "Position (FEN): #{fen}\n"
+      str << "Move actually played: #{played_san}\n"
+      str << "What follows after that move, per the engine's own analysis (long algebraic notation): #{pv_after.try(&.join(" ")) || "not available"}\n"
+      if better_san
+        str << "Suggested move instead: #{better_san}\n"
+        str << "What would follow after that instead, per the engine's analysis: #{pv_before.try(&.join(" ")) || "not available"}\n"
+      end
+      str << "Explain concretely why #{played_san} was a mistake here"
+      str << (better_san ? " compared to #{better_san}." : ".")
+    end
+
+    messages = [
+      {
+        role:    "system",
+        content: "You are a chess coach explaining one move to a club player reviewing their own game. Be concrete and specific - name the actual piece, square, or tactic involved (a hanging piece, a fork, a pin, a discovered attack, a weak back rank, etc), using the given position and lines as your evidence. 2-4 sentences. Don't just restate an evaluation number.",
+      },
+      {role: "user", content: prompt},
+    ]
+    body = {model: MODEL, temperature: 0.3, messages: messages}.to_json
+
+    result = post_to_openai(body)
+    choices = result["choices"]
+    choices[choices.size - 1]["message"]["content"].to_s
   end
 
   private def chat_loop(board : Board) : String
@@ -318,7 +364,7 @@ class AI
     retry_count = 0
 
     while retry_count < 3
-      response = with_spinner { HTTP::Client.post(URL, headers: build_headers, body: body) }
+      response = with_spinner { @client.post(ENDPOINT_PATH, headers: build_headers, body: body) }
       if response.success?
         return JSON.parse(response.body)
       else
@@ -326,6 +372,10 @@ class AI
       end
     end
     raise "Failed to get response from OpenAI API"
+  rescue e : IO::TimeoutError
+    # not retried - the model was already given the full timeout once, and
+    # trying again with the same budget just multiplies the wait
+    raise "#{MODEL} didn't respond within #{TIMEOUT.total_seconds.to_i}s (set OPENAI_TIMEOUT to change this) - it may be stuck or overloaded."
   end
 
   SPINNER_FRAMES = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -334,8 +384,18 @@ class AI
   # with an elapsed-seconds counter on the main one, so a slow model and a
   # genuinely hung one don't look identical (nothing printed at all).
   private def with_spinner(&block : -> HTTP::Client::Response) : HTTP::Client::Response
-    result = Channel(HTTP::Client::Response).new
-    spawn { result.send(block.call) }
+    result = Channel(HTTP::Client::Response | Exception).new
+    spawn do
+      begin
+        result.send(block.call)
+      rescue e
+        # An unhandled exception inside a spawned fiber is only printed and
+        # silently drops the fiber - it never reaches the receiving fiber on
+        # its own, which would otherwise leave the spinner looping forever
+        # on a channel that's never going to receive anything.
+        result.send(e)
+      end
+    end
 
     started_at = Time.instant
     frame = 0
@@ -354,6 +414,7 @@ class AI
 
     print "\r\e[2K"
     STDOUT.flush
+    raise response if response.is_a?(Exception)
     response
   end
 

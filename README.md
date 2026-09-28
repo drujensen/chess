@@ -13,17 +13,18 @@ You may need to zoom in to see the board properly.
 ## Installation
 
 By default the AI opponent is a local [Ollama](https://ollama.com) model
-(`qwen3.8:latest`, talking to `http://localhost:11434/v1`), so no API key
+(`ornith:latest`, talking to `http://localhost:11434/v1`), so no API key
 is required out of the box - just have Ollama running with that model
 pulled.
 
-The endpoint and model are configurable via environment variables, so you
-can point this at any OpenAI-compatible API instead, including the real
-OpenAI API:
+The endpoint, model, and per-request timeout are all configurable via
+environment variables, so you can point this at any OpenAI-compatible API
+instead, including the real OpenAI API:
 ```
 export OPENAI_BASE_URL=https://api.openai.com/v1
 export OPENAI_MODEL=gpt-4o
 export OPENAI_API_KEY=your-api-key
+export OPENAI_TIMEOUT=300 # seconds per request before giving up (default 300)
 ```
 
 Then clone the repository:
@@ -73,6 +74,21 @@ finished game's PGN are saved under `~/.chess/` - `profile.json` and
 `games/<timestamp>.pgn`. Your rating updates using the standard Elo formula
 against the Elo midpoint of whatever skill level you played.
 
+When browsing a saved game, if you have [Stockfish](https://stockfishchess.org/)
+installed (e.g. `sudo dnf install stockfish` / `apt install stockfish` /
+`brew install stockfish`), you'll be offered a one-time analysis pass that
+flags mistakes and blunders with the engine's suggested move instead, shown
+above the board as you step through. The analysis is written directly into
+the game's PGN as standard comments/NAGs, so it's portable to any other
+PGN-reading tool, and only ever computed once per game. Without Stockfish
+installed, replay still works, just without the analysis.
+
+On any flagged move, press `e` to have the AI explain *why* it was a
+mistake in plain language - grounded in Stockfish's own line for both the
+move played and its suggestion, so the AI is only narrating evidence it's
+handed, not calculating anything itself. Also computed once and cached
+back into the same PGN.
+
 ## Development
 
 List of things to contribute:
@@ -92,7 +108,7 @@ List of things to contribute:
 - [ ] Recognize and display opening names (ECO) as a game progresses
 - [x] Save finished games to disk (PGN) and let players browse/replay past games
 - [x] Save an in-progress game after every move and let players resume it later
-- [ ] Post-game analysis mode (AI reviews the finished game for blunders)
+- [x] Post-game analysis mode (Stockfish reviews the finished game for blunders/mistakes, shown while browsing saved games - optional, needs `stockfish` installed)
 - [ ] Hint mode - ask the AI for a suggested move without committing to it
 - [ ] Undo/redo a move
 - [x] Make the model/endpoint configurable via env vars instead of hardcoded constants

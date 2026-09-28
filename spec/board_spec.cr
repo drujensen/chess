@@ -78,8 +78,25 @@ describe Board do
 
       board.sans.should eq(["f3", "e5", "g4", "Qh4#"])
       board.to_pgn({"Result" => "0-1"}, "0-1").should eq(
-        %([Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n)
+        %([Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n\n)
       )
+    end
+
+    it "ends with a blank line so multiple games concatenate correctly" do
+      board = Board.new
+      board.setup
+      board.turn("f2f3", true)
+      board.turn("e7e5", false)
+      board.turn("g2g4", true)
+      board.turn("d8h4", false)
+      board.to_pgn({"Result" => "0-1"}, "0-1").should end_with("\n\n")
+
+      other = Board.new
+      other.setup
+      other.turn("e2e4", true)
+      concatenated = board.to_pgn({"Event" => "Game 1", "Result" => "0-1"}, "0-1") +
+                     other.to_pgn({"Event" => "Game 2", "Result" => "*"}, "*")
+      concatenated.should contain("0-1\n\n[Event \"Game 2\"]")
     end
 
     it "notes captures and promotions" do

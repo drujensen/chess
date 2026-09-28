@@ -292,6 +292,17 @@ class Board
     end
   end
 
+  # SAN for a candidate move that hasn't been played yet, e.g. an engine's
+  # suggested "better move" - no check/mate suffix, since that needs the
+  # position after playing it, which a move under consideration never gets.
+  def move_to_san(move : String, white : Bool) : String
+    from_x = move[0].ord - 'a'.ord
+    from_y = move[1].to_i - 1
+    to_x = move[2].ord - 'a'.ord
+    to_y = move[3].to_i - 1
+    san_prefix_for(from_x, from_y, to_x, to_y, white)
+  end
+
   # Forsyth-Edwards Notation for the current position, for use as a compact
   # "here's the board" tool response for the AI - cheaper and less ambiguous
   # than reconstructing state from a move-history string.
@@ -407,7 +418,12 @@ class Board
       str << result
     end
 
-    "#{header_lines}\n\n#{move_text}\n"
+    # A trailing blank line is required, not just a newline - the PGN spec
+    # separates consecutive games in a multi-game file with one, and without
+    # it a parser that builds a game list from [Event] tags (as PyChess
+    # does) can still list this game but fail to find where its movetext
+    # ends, showing a blank board when you open it.
+    "#{header_lines}\n\n#{move_text}\n\n"
   end
 
   private def san_prefix_for(from_x, from_y, to_x, to_y, white) : String
