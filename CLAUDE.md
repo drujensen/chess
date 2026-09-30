@@ -14,7 +14,7 @@ A terminal chess app written in Crystal. The human plays white; black is played 
 - Run a single spec file: `crystal spec spec/pieces/pawn_spec.cr`
 - Run a single example: `crystal spec spec/pieces/pawn_spec.cr -e "allows white pawn to move forward one square"`
 
-Requires a local Ollama server by default, with a tool-calling-capable model pulled (`ornith:latest`, currently). The endpoint, model, and per-request timeout are configurable via `OPENAI_BASE_URL`/`OPENAI_MODEL`/`OPENAI_TIMEOUT` env vars (see `src/ai.cr`'s `BASE_URL`/`MODEL`/`TIMEOUT` constants - `TIMEOUT` defaults to 300s), so pointing them at the real OpenAI API (and setting `OPENAI_API_KEY`) works too.
+Requires a local Ollama server by default, with a tool-calling-capable model pulled (`qwen3.8:latest`, currently). The endpoint, model, and per-request timeout are configurable via `OPENAI_BASE_URL`/`OPENAI_MODEL`/`OPENAI_TIMEOUT` env vars (see `src/ai.cr`'s `BASE_URL`/`MODEL`/`TIMEOUT` constants - `TIMEOUT` defaults to 300s), so pointing them at the real OpenAI API (and setting `OPENAI_API_KEY`) works too.
 
 Post-game analysis (`Analysis`, below) needs a `stockfish` binary on `PATH` - optional, degrades to a one-line warning when absent, and one spec (`spec/analysis_spec.cr`, tagged `"stockfish"`) calls the real engine and self-skips via `pending!` when it's missing.
 

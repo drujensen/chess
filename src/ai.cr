@@ -10,7 +10,7 @@ class AI
   BASE_URL      = ENV.fetch("OPENAI_BASE_URL", "http://localhost:11434/v1")
   BASE_URI      = URI.parse(BASE_URL)
   ENDPOINT_PATH = "#{BASE_URI.path}/chat/completions"
-  MODEL         = ENV.fetch("OPENAI_MODEL", "ornith:latest")
+  MODEL         = ENV.fetch("OPENAI_MODEL", "qwen3.8:latest")
 
   # How long a single request may run before giving up - a slow or stuck
   # local model would otherwise hang forever with no way to notice, since
@@ -100,7 +100,7 @@ class AI
   private def chat_loop(board : Board) : String
     body = {
       model:       MODEL,
-      temperature: 1.0,
+      temperature: 0.3,
       messages:    @messages,
       tools:       [moves_tool, board_tool],
       tool_choice: "auto",
@@ -169,7 +169,7 @@ class AI
   private def next_move_loop(board : Board) : String
     body = {
       model:       MODEL,
-      temperature: 1.0,
+      temperature: 0.3,
       messages:    @messages,
       tools:       [moves_tool, board_tool, move_tool, resign_tool],
       tool_choice: "auto",
