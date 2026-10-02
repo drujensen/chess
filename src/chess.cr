@@ -37,6 +37,7 @@ class Chess
     @board.setup
     @profile = Profile.load
     puts "#{profile.name}'s rating: #{profile.rating.round(1)} (#{profile.games_played} games played)"
+    puts "opponent: #{AI::MODEL} @ #{AI::BASE_URL}"
     @error_count = 0
     @last_error = ""
 

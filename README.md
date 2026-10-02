@@ -13,7 +13,7 @@ You may need to zoom in to see the board properly.
 ## Installation
 
 By default the AI opponent is a local [Ollama](https://ollama.com) model
-(`ornith:latest`, talking to `http://localhost:11434/v1`), so no API key
+(`qwen3.8:latest`, talking to `http://localhost:11434/v1`), so no API key
 is required out of the box - just have Ollama running with that model
 pulled.
 
@@ -21,10 +21,20 @@ The endpoint, model, and per-request timeout are all configurable via
 environment variables, so you can point this at any OpenAI-compatible API
 instead, including the real OpenAI API:
 ```
-export OPENAI_BASE_URL=https://api.openai.com/v1
-export OPENAI_MODEL=gpt-4o
-export OPENAI_API_KEY=your-api-key
-export OPENAI_TIMEOUT=300 # seconds per request before giving up (default 300)
+export CHESS_BASE_URL=https://api.openai.com/v1
+export CHESS_MODEL=gpt-4o
+export CHESS_API_KEY=your-api-key
+export CHESS_TIMEOUT=300 # seconds per request before giving up (default 300)
+```
+
+Or, for a provider already listed in `AI::PROVIDERS` (`openai`, `xai`,
+`deepseek`, `groq`, `mistral`, `together`, `fireworks`, `openrouter`,
+`gemini`, `ollama`, `drujensen`), just set `CHESS_PROVIDER` instead - it
+looks up the base URL and that provider's own API key env var (e.g.
+`XAI_API_KEY`) automatically:
+```
+export CHESS_PROVIDER=xai
+export CHESS_MODEL=grok-4-fast
 ```
 
 Then clone the repository:

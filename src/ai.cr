@@ -7,23 +7,51 @@ require "./game_over.cr"
 class AI
   property prev_tool_id : String?
   property skill_level : SkillLevel
-  BASE_URL      = ENV.fetch("OPENAI_BASE_URL", "http://localhost:11434/v1")
+  @api_key : String?
+
+  # CHESS_PROVIDER picks one of these so switching providers is one env var
+  # instead of re-exporting CHESS_BASE_URL/CHESS_API_KEY by hand each time -
+  # the API key stays wherever it already lives (e.g. XAI_API_KEY alongside
+  # everything else in a .profile), never duplicated under CHESS_API_KEY.
+  # CHESS_BASE_URL/CHESS_API_KEY still work directly for anything not listed
+  # here, and take precedence when both are set.
+  PROVIDERS = {
+    "openai"     => {base_url: "https://api.openai.com/v1", key_env: "OPENAI_API_KEY"},
+    "xai"        => {base_url: "https://api.x.ai/v1", key_env: "XAI_API_KEY"},
+    "deepseek"   => {base_url: "https://api.deepseek.com/v1", key_env: "DEEPSEEK_API_KEY"},
+    "groq"       => {base_url: "https://api.groq.com/openai/v1", key_env: "GROQ_API_KEY"},
+    "mistral"    => {base_url: "https://api.mistral.ai/v1", key_env: "MISTRAL_API_KEY"},
+    "together"   => {base_url: "https://api.together.xyz/v1", key_env: "TOGETHER_API_KEY"},
+    "fireworks"  => {base_url: "https://api.fireworks.ai/inference/v1", key_env: "FIREWORKS_API_KEY"},
+    "openrouter" => {base_url: "https://openrouter.ai/api/v1", key_env: "OPENROUTER_API_KEY"},
+    "gemini"     => {base_url: "https://generativelanguage.googleapis.com/v1beta/openai", key_env: "GEMINI_API_KEY"},
+    "ollama"     => {base_url: "http://localhost:11434/v1", key_env: nil},
+    "drujensen"  => {base_url: "https://ai.drujensen.com/v1", key_env: "DRUJENSEN_API_KEY"},
+  }
+
+  def self.provider_config
+    name = ENV["CHESS_PROVIDER"]?
+    return nil unless name
+    PROVIDERS[name.downcase]? || raise "unknown CHESS_PROVIDER: #{name} - known providers: #{PROVIDERS.keys.join(", ")}"
+  end
+
+  BASE_URL      = ENV["CHESS_BASE_URL"]? || provider_config.try(&.[:base_url]) || "http://localhost:11434/v1"
   BASE_URI      = URI.parse(BASE_URL)
   ENDPOINT_PATH = "#{BASE_URI.path}/chat/completions"
-  MODEL         = ENV.fetch("OPENAI_MODEL", "qwen3.8:latest")
+  MODEL         = ENV.fetch("CHESS_MODEL", "qwen3.8:latest")
 
   # How long a single request may run before giving up - a slow or stuck
   # local model would otherwise hang forever with no way to notice, since
   # nothing else in this app puts any bound on how long "thinking" can take.
   CONNECT_TIMEOUT = 10.seconds
-  TIMEOUT         = ENV.fetch("OPENAI_TIMEOUT", "300").to_i.seconds
+  TIMEOUT         = ENV.fetch("CHESS_TIMEOUT", "300").to_i.seconds
 
   # resume_moves: long-algebraic moves already played (alternating white/
   # black, starting with white), when picking a previously-saved game back
   # up. The exact prior conversation can't be restored, so instead the model
   # is briefed with the game-so-far as its first message.
   def initialize(@skill_level : SkillLevel = SkillLevel::Advanced, resume_moves : Array(String)? = nil)
-    @api_key = ENV["OPENAI_API_KEY"]?
+    @api_key = ENV["CHESS_API_KEY"]? || AI.provider_config.try(&.[:key_env]).try { |key_env| ENV[key_env]? }
     @client = HTTP::Client.new(BASE_URI)
     @client.connect_timeout = CONNECT_TIMEOUT
     @client.read_timeout = TIMEOUT
@@ -92,7 +120,7 @@ class AI
     ]
     body = {model: MODEL, temperature: 0.3, messages: messages}.to_json
 
-    result = post_to_openai(body)
+    result = post_chat_completion(body)
     choices = result["choices"]
     choices[choices.size - 1]["message"]["content"].to_s
   end
@@ -106,7 +134,7 @@ class AI
       tool_choice: "auto",
     }.to_json
 
-    result = post_to_openai(body)
+    result = post_chat_completion(body)
     choices = result["choices"]
     message = choices[choices.size - 1]["message"]
     tool_calls = message["tool_calls"]?
@@ -114,17 +142,23 @@ class AI
     return message["content"].to_s if tool_calls.nil?
 
     @messages.push(message)
-    tool = tool_calls[tool_calls.size - 1]
-    tool_id = tool["id"].to_s
 
-    case tool["function"]["name"]
-    when "moves"
-      puts "moves called: #{board.moves.join(", ")}"
-      @messages.push({tool_call_id: tool_id, role: "tool", name: "moves", content: board.moves.join(", ")})
-    else
-      fen = board.to_fen(true)
-      puts "board called: #{fen}"
-      @messages.push({tool_call_id: tool_id, role: "tool", name: "board", content: fen})
+    # Every tool_call in the message must get a matching tool response before
+    # @messages is ever sent again, or the next request is rejected outright
+    # (some providers, e.g. DeepSeek, enforce this strictly) - so all of them
+    # are answered here, not just the last one.
+    tool_calls.as_a.each do |tool|
+      tool_id = tool["id"].to_s
+
+      case tool["function"]["name"]
+      when "moves"
+        puts "moves called: #{board.moves.join(", ")}"
+        @messages.push({tool_call_id: tool_id, role: "tool", name: "moves", content: board.moves.join(", ")})
+      else
+        fen = board.to_fen(true)
+        puts "board called: #{fen}"
+        @messages.push({tool_call_id: tool_id, role: "tool", name: "board", content: fen})
+      end
     end
 
     chat_loop(board)
@@ -175,7 +209,7 @@ class AI
       tool_choice: "auto",
     }.to_json
 
-    result = post_to_openai(body)
+    result = post_chat_completion(body)
 
     choices = result["choices"]
     message = choices[choices.size - 1]["message"]
@@ -189,46 +223,51 @@ class AI
 
     @messages.push(message)
 
-    tool = tool_calls[tool_calls.size - 1]
-    tool_id = tool["id"].to_s
+    # Every tool_call in the message must get a matching tool response before
+    # @messages is ever sent again, or the next request is rejected outright
+    # (some providers, e.g. DeepSeek, enforce this strictly) - so all of them
+    # are answered here, not just the last one, even when (as with "move" or
+    # "resign") only one of them actually ends the turn.
+    requested_move = nil
 
-    case tool["function"]["name"]
-    when "moves"
-      puts "moves called: #{board.moves.join(", ")}"
-      @messages.push({
-        tool_call_id: tool_id,
-        role:         "tool",
-        name:         "moves",
-        content:      "#{board.moves.join(", ")}",
-      })
+    tool_calls.as_a.each do |tool|
+      tool_id = tool["id"].to_s
 
-      next_move_loop(board)
-    when "board"
-      fen = board.to_fen(false)
-      puts "board called: #{fen}"
-      @messages.push({
-        tool_call_id: tool_id,
-        role:         "tool",
-        name:         "board",
-        content:      fen,
-      })
+      case tool["function"]["name"]
+      when "moves"
+        puts "moves called: #{board.moves.join(", ")}"
+        @messages.push({
+          tool_call_id: tool_id,
+          role:         "tool",
+          name:         "moves",
+          content:      "#{board.moves.join(", ")}",
+        })
+      when "board"
+        fen = board.to_fen(false)
+        puts "board called: #{fen}"
+        @messages.push({
+          tool_call_id: tool_id,
+          role:         "tool",
+          name:         "board",
+          content:      fen,
+        })
+      when "resign"
+        puts "black resigns!"
+        raise GameOver.new("black resigns - white wins!", "1-0")
+      else
+        requested_move = JSON.parse(tool["function"]["arguments"].to_s)["nextMove"].to_s.strip
+        @messages.push({
+          tool_call_id: tool_id,
+          role:         "tool",
+          name:         "move",
+          content:      "success",
+        })
 
-      next_move_loop(board)
-    when "resign"
-      puts "black resigns!"
-      raise GameOver.new("black resigns - white wins!", "1-0")
-    else
-      requested_move = JSON.parse(tool["function"]["arguments"].to_s)["nextMove"].to_s.strip
-      @messages.push({
-        tool_call_id: tool_id,
-        role:         "tool",
-        name:         "move",
-        content:      "success",
-      })
-
-      puts "move called: #{requested_move}"
-      requested_move
+        puts "move called: #{requested_move}"
+      end
     end
+
+    requested_move || next_move_loop(board)
   end
 
   private def moves_tool
@@ -347,7 +386,7 @@ class AI
       tool_choice: "auto",
     }.to_json
 
-    result = post_to_openai(body)
+    result = post_chat_completion(body)
     choices = result["choices"]
     message = choices[choices.size - 1]["message"]
     tool_calls = message["tool_calls"]?
@@ -360,22 +399,35 @@ class AI
     legal.includes?(move) ? move : nil
   end
 
-  private def post_to_openai(body)
+  private def post_chat_completion(body)
     retry_count = 0
+    last_error = "no attempts made"
 
     while retry_count < 3
-      response = with_spinner { @client.post(ENDPOINT_PATH, headers: build_headers, body: body) }
-      if response.success?
-        return JSON.parse(response.body)
-      else
-        retry_count += 1
+      begin
+        response = with_spinner { @client.post(ENDPOINT_PATH, headers: build_headers, body: body) }
+        return JSON.parse(response.body) if response.success?
+        last_error = "HTTP #{response.status_code}: #{response.body}"
+      rescue e : IO::TimeoutError
+        # re-raised, not retried here - caught below by the method-level
+        # rescue, same as if it had propagated straight out of the loop
+        raise e
+      rescue e : IO::Error
+        # some providers' proxies drop an idle kept-alive connection out from
+        # under us (IO::EOFError "Unexpected end of http response") or reset it
+        # outright (plain IO::Error "Connection reset by peer") - either way the
+        # socket is dead, so retrying on it would just hit the same error again;
+        # closing forces a fresh connection on the next attempt
+        @client.close
+        last_error = "connection dropped (#{e.message})"
       end
+      retry_count += 1
     end
-    raise "Failed to get response from OpenAI API"
+    raise "request to #{BASE_URL} failed after 3 attempts - #{last_error}"
   rescue e : IO::TimeoutError
     # not retried - the model was already given the full timeout once, and
     # trying again with the same budget just multiplies the wait
-    raise "#{MODEL} didn't respond within #{TIMEOUT.total_seconds.to_i}s (set OPENAI_TIMEOUT to change this) - it may be stuck or overloaded."
+    raise "#{MODEL} didn't respond within #{TIMEOUT.total_seconds.to_i}s (set CHESS_TIMEOUT to change this) - it may be stuck or overloaded."
   end
 
   SPINNER_FRAMES = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
