@@ -5,8 +5,8 @@ Play a game of chess against an AI.
 Written in the Crystal language.
 
 This is a terminal app that allows you to play chess against
-an AI opponent. You get to play white; the AI plays black,
-at a skill level you choose.
+an AI opponent, at a skill level you choose. Pick white, black,
+or random at the start of a new game.
 
 You may need to zoom in to see the board properly.
 
@@ -122,6 +122,8 @@ List of things to contribute:
 - [ ] Hint mode - ask the AI for a suggested move without committing to it
 - [ ] Undo/redo a move
 - [x] Make the model/endpoint configurable via env vars instead of hardcoded constants
+- [x] Let the human choose white, black, or random at the start of a new game
+- [x] Undo the last move(s), including the AI's, to try something different - type `undo` (or `undo N`), or just ask the AI to take it back mid-chat
 - [x] Track player rating/ELO across saved games
 - [x] Selectable AI skill levels (Novice 0-500, Beginner 500-1000, Intermediate 1000-1500, Advanced 1500-2000, Master 2000-2500, Grandmaster 2500+) so players can progress
 

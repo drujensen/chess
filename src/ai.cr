@@ -3,6 +3,7 @@ require "http/client"
 require "time"
 require "./skill_level.cr"
 require "./game_over.cr"
+require "./undo_requested.cr"
 
 class AI
   property prev_tool_id : String?
@@ -50,17 +51,19 @@ class AI
   # black, starting with white), when picking a previously-saved game back
   # up. The exact prior conversation can't be restored, so instead the model
   # is briefed with the game-so-far as its first message.
-  def initialize(@skill_level : SkillLevel = SkillLevel::Advanced, resume_moves : Array(String)? = nil)
+  def initialize(@skill_level : SkillLevel = SkillLevel::Advanced, @ai_white : Bool = false, resume_moves : Array(String)? = nil)
     @api_key = ENV["CHESS_API_KEY"]? || AI.provider_config.try(&.[:key_env]).try { |key_env| ENV[key_env]? }
     @client = HTTP::Client.new(BASE_URI)
     @client.connect_timeout = CONNECT_TIMEOUT
     @client.read_timeout = TIMEOUT
     @messages = [] of NamedTuple(role: String, content: String) | NamedTuple(tool_call_id: String, role: String, name: String, content: String) | JSON::Any
 
+    human_color = @ai_white ? "black" : "white"
+    ai_color = @ai_white ? "white" : "black"
     @messages.push(
       {
         role:    "system",
-        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is white and you are black. There are 4 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. move: play the next move. resign: give up the game if your position is truly lost (e.g. you're getting checkmated soon with no way out, or you've lost overwhelming material with no compensation) - only resign when it's genuinely hopeless, not just because you're slightly worse. You have about #{TIMEOUT.total_seconds.to_i} seconds to reply each time you're asked something - don't overthink it, decide promptly and call the relevant function.",
+        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is #{human_color} and you are #{ai_color}. There are 4 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. move: play the next move. resign: give up the game if your position is truly lost (e.g. you're getting checkmated soon with no way out, or you've lost overwhelming material with no compensation) - only resign when it's genuinely hopeless, not just because you're slightly worse. You have about #{TIMEOUT.total_seconds.to_i} seconds to reply each time you're asked something - don't overthink it, decide promptly and call the relevant function.",
       }
     )
 
@@ -130,7 +133,7 @@ class AI
       model:       MODEL,
       temperature: 0.3,
       messages:    @messages,
-      tools:       [moves_tool, board_tool],
+      tools:       [moves_tool, board_tool, undo_tool],
       tool_choice: "auto",
     }.to_json
 
@@ -146,7 +149,10 @@ class AI
     # Every tool_call in the message must get a matching tool response before
     # @messages is ever sent again, or the next request is rejected outright
     # (some providers, e.g. DeepSeek, enforce this strictly) - so all of them
-    # are answered here, not just the last one.
+    # are answered here, not just the last one. "undo" is the exception - it
+    # raises straight out instead, since Chess#next_turn discards this entire
+    # AI (and its @messages, unanswered tool_call included) and builds a
+    # fresh one briefed on the rolled-back position, same as a resumed game.
     tool_calls.as_a.each do |tool|
       tool_id = tool["id"].to_s
 
@@ -154,8 +160,13 @@ class AI
       when "moves"
         puts "moves called: #{board.moves.join(", ")}"
         @messages.push({tool_call_id: tool_id, role: "tool", name: "moves", content: board.moves.join(", ")})
+      when "undo"
+        args = JSON.parse(tool["function"]["arguments"].to_s)
+        count = args["count"]?.try(&.as_i?) || 1
+        puts "undo called: #{count}"
+        raise UndoRequested.new(count)
       else
-        fen = board.to_fen(true)
+        fen = board.to_fen(!@ai_white)
         puts "board called: #{fen}"
         @messages.push({tool_call_id: tool_id, role: "tool", name: "board", content: fen})
       end
@@ -165,11 +176,12 @@ class AI
   end
 
   def next_move(board : Board, error : String? = nil) : String
-    @messages.push({role: "user", content: "I played #{board.moves.last}.  your turn."})
+    opening_prompt = board.moves.empty? ? "You are playing white and move first. Make your opening move." : "I played #{board.moves.last}.  your turn."
+    @messages.push({role: "user", content: opening_prompt})
 
-    legal = board.legal_moves(false)
+    legal = board.legal_moves(@ai_white)
 
-    if board.in_check?(false)
+    if board.in_check?(@ai_white)
       @messages.push({
         role:    "system",
         content: "You are in check! You must play a move that gets your king out of check - capture the checking piece, block it, or move the king.",
@@ -193,7 +205,7 @@ class AI
     if rand < skill_level.weak_move_chance
       @messages.push({
         role:    "system",
-        content: "For this move only: play like a genuine #{skill_level.to_s.downcase}. Don't calculate deeply - play a simple, natural-looking move rather than searching for your objectively strongest option, and it's fine to miss a tactic or overlook a threat. Legal moves right now: #{board.legal_moves(false).join(", ")}.",
+        content: "For this move only: play like a genuine #{skill_level.to_s.downcase}. Don't calculate deeply - play a simple, natural-looking move rather than searching for your objectively strongest option, and it's fine to miss a tactic or overlook a threat. Legal moves right now: #{board.legal_moves(@ai_white).join(", ")}.",
       })
     end
 
@@ -243,7 +255,7 @@ class AI
           content:      "#{board.moves.join(", ")}",
         })
       when "board"
-        fen = board.to_fen(false)
+        fen = board.to_fen(@ai_white)
         puts "board called: #{fen}"
         @messages.push({
           tool_call_id: tool_id,
@@ -252,8 +264,8 @@ class AI
           content:      fen,
         })
       when "resign"
-        puts "black resigns!"
-        raise GameOver.new("black resigns - white wins!", "1-0")
+        puts "#{@ai_white ? "white" : "black"} resigns!"
+        raise GameOver.new("#{@ai_white ? "white" : "black"} resigns - #{@ai_white ? "black" : "white"} wins!", @ai_white ? "0-1" : "1-0")
       else
         requested_move = JSON.parse(tool["function"]["arguments"].to_s)["nextMove"].to_s.strip
         @messages.push({
@@ -298,6 +310,25 @@ class AI
     }
   end
 
+  private def undo_tool
+    {
+      type:     "function",
+      function: {
+        name:        "undo",
+        description: "take back the human's last move and your reply to it, so they can try something different from an earlier position. Only call this when the human clearly asks to undo, take back, or go back - never on your own initiative.",
+        parameters:  {
+          type:       "object",
+          properties: {
+            count: {
+              type:        "integer",
+              description: "how many of the human's own previous moves to go back - each one also undoes your reply to it. Defaults to 1 if omitted.",
+            },
+          },
+        },
+      },
+    }
+  end
+
   private def move_tool
     {
       type:     "function",
@@ -336,18 +367,19 @@ class AI
   # position and its actual legal moves. Returns nil if the instruction
   # doesn't clearly describe exactly one legal move for white, so the caller
   # can fall back to treating it as ordinary chat.
-  def resolve_move(board : Board, text : String) : String?
-    legal = board.legal_moves(true)
+  def resolve_move(board : Board, text : String, white : Bool) : String?
+    legal = board.legal_moves(white)
     return nil if legal.empty?
 
+    side = white ? "white" : "black"
     messages = [
       {
         role:    "system",
-        content: "You translate a chess player's instruction into one legal move for the white side. You are given the position as FEN and the full list of white's legal moves in long algebraic notation. If the instruction clearly identifies exactly one of those legal moves, call propose_move with it verbatim. If it's ambiguous, illegal, or isn't describing a move at all (e.g. a question or comment), call not_a_move instead.",
+        content: "You translate a chess player's instruction into one legal move for the #{side} side. You are given the position as FEN and the full list of #{side}'s legal moves in long algebraic notation. If the instruction clearly identifies exactly one of those legal moves, call propose_move with it verbatim. If it's ambiguous, illegal, or isn't describing a move at all (e.g. a question or comment), call not_a_move instead.",
       },
       {
         role:    "user",
-        content: "FEN: #{board.to_fen(true)}\nLegal moves: #{legal.join(", ")}\nInstruction: #{text}",
+        content: "FEN: #{board.to_fen(white)}\nLegal moves: #{legal.join(", ")}\nInstruction: #{text}",
       },
     ]
     body = {

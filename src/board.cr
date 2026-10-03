@@ -506,17 +506,24 @@ class Board
     result
   end
 
-  def draw
+  # flipped: draw from black's perspective (rank 1 at top, files h->a
+  # left-to-right) instead of white's, for when the human is playing black.
+  def draw(flipped : Bool = false)
     puts "black: #{white_captured.sum(&.value)} white: #{black_captured.sum(&.value)}"
-    puts "\e[0m  a b c d e f g h \e[0m"
-    puts "\e[0m8 \e[48;5;240m#{pieces[7][0].draw}\e[48;5;243m#{pieces[7][1].draw}\e[48;5;240m#{pieces[7][2].draw}\e[48;5;243m#{pieces[7][3].draw}\e[48;5;240m#{pieces[7][4].draw}\e[48;5;243m#{pieces[7][5].draw}\e[48;5;240m#{pieces[7][6].draw}\e[48;5;243m#{pieces[7][7].draw}\e[0m 8"
-    puts "\e[0m7 \e[48;5;243m#{pieces[6][0].draw}\e[48;5;240m#{pieces[6][1].draw}\e[48;5;243m#{pieces[6][2].draw}\e[48;5;240m#{pieces[6][3].draw}\e[48;5;243m#{pieces[6][4].draw}\e[48;5;240m#{pieces[6][5].draw}\e[48;5;243m#{pieces[6][6].draw}\e[48;5;240m#{pieces[6][7].draw}\e[0m 7"
-    puts "\e[0m6 \e[48;5;240m#{pieces[5][0].draw}\e[48;5;243m#{pieces[5][1].draw}\e[48;5;240m#{pieces[5][2].draw}\e[48;5;243m#{pieces[5][3].draw}\e[48;5;240m#{pieces[5][4].draw}\e[48;5;243m#{pieces[5][5].draw}\e[48;5;240m#{pieces[5][6].draw}\e[48;5;243m#{pieces[5][7].draw}\e[0m 6"
-    puts "\e[0m5 \e[48;5;243m#{pieces[4][0].draw}\e[48;5;240m#{pieces[4][1].draw}\e[48;5;243m#{pieces[4][2].draw}\e[48;5;240m#{pieces[4][3].draw}\e[48;5;243m#{pieces[4][4].draw}\e[48;5;240m#{pieces[4][5].draw}\e[48;5;243m#{pieces[4][6].draw}\e[48;5;240m#{pieces[4][7].draw}\e[0m 5"
-    puts "\e[0m4 \e[48;5;240m#{pieces[3][0].draw}\e[48;5;243m#{pieces[3][1].draw}\e[48;5;240m#{pieces[3][2].draw}\e[48;5;243m#{pieces[3][3].draw}\e[48;5;240m#{pieces[3][4].draw}\e[48;5;243m#{pieces[3][5].draw}\e[48;5;240m#{pieces[3][6].draw}\e[48;5;243m#{pieces[3][7].draw}\e[0m 4"
-    puts "\e[0m3 \e[48;5;243m#{pieces[2][0].draw}\e[48;5;240m#{pieces[2][1].draw}\e[48;5;243m#{pieces[2][2].draw}\e[48;5;240m#{pieces[2][3].draw}\e[48;5;243m#{pieces[2][4].draw}\e[48;5;240m#{pieces[2][5].draw}\e[48;5;243m#{pieces[2][6].draw}\e[48;5;240m#{pieces[2][7].draw}\e[0m 3"
-    puts "\e[0m2 \e[48;5;240m#{pieces[1][0].draw}\e[48;5;243m#{pieces[1][1].draw}\e[48;5;240m#{pieces[1][2].draw}\e[48;5;243m#{pieces[1][3].draw}\e[48;5;240m#{pieces[1][4].draw}\e[48;5;243m#{pieces[1][5].draw}\e[48;5;240m#{pieces[1][6].draw}\e[48;5;243m#{pieces[1][7].draw}\e[0m 2"
-    puts "\e[0m1 \e[48;5;243m#{pieces[0][0].draw}\e[48;5;240m#{pieces[0][1].draw}\e[48;5;243m#{pieces[0][2].draw}\e[48;5;240m#{pieces[0][3].draw}\e[48;5;243m#{pieces[0][4].draw}\e[48;5;240m#{pieces[0][5].draw}\e[48;5;243m#{pieces[0][6].draw}\e[48;5;240m#{pieces[0][7].draw}\e[0m 1"
-    puts "\e[0m  a b c d e f g h \e[0m"
+    files = flipped ? (0..7).to_a.reverse : (0..7).to_a
+    ranks = flipped ? (0..7).to_a : (0..7).to_a.reverse
+    file_labels = files.map { |x| ('a'.ord + x).chr }.join(" ")
+
+    puts "\e[0m  #{file_labels} \e[0m"
+    ranks.each do |y|
+      row = String.build do |str|
+        files.each do |x|
+          color = (x + y).even? ? 243 : 240
+          str << "\e[48;5;#{color}m#{pieces[y][x].draw}"
+        end
+      end
+      puts "\e[0m#{y + 1} #{row}\e[0m #{y + 1}"
+    end
+    puts "\e[0m  #{file_labels} \e[0m"
   end
 end
