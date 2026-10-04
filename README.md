@@ -124,6 +124,7 @@ List of things to contribute:
 - [x] Make the model/endpoint configurable via env vars instead of hardcoded constants
 - [x] Let the human choose white, black, or random at the start of a new game
 - [x] Undo the last move(s), including the AI's, to try something different - type `undo` (or `undo N`), or just ask the AI to take it back mid-chat
+- [x] Ask the AI to set up a specific position or named opening (e.g. "show me the Ruy Lopez") to study it
 - [x] Track player rating/ELO across saved games
 - [x] Selectable AI skill levels (Novice 0-500, Beginner 500-1000, Intermediate 1000-1500, Advanced 1500-2000, Master 2000-2500, Grandmaster 2500+) so players can progress
 

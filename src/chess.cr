@@ -4,6 +4,7 @@ require "./ai.cr"
 require "./profile.cr"
 require "./game_over.cr"
 require "./undo_requested.cr"
+require "./setup_requested.cr"
 require "./replay.cr"
 require "./saved_game.cr"
 
@@ -116,6 +117,8 @@ class Chess
             puts ai.chat(board, move)
           rescue ex : UndoRequested
             undo(ex.count)
+          rescue ex : SetupRequested
+            setup_position(ex.moves)
           end
           return
         end
@@ -183,6 +186,36 @@ class Chess
     save_progress
 
     puts "undid #{remove} move#{remove == 1 ? "" : "s"} - #{remaining.size} move#{remaining.size == 1 ? "" : "s"} remain. #{@white ? "white" : "black"}'s turn."
+  end
+
+  # Jumps straight to an arbitrary (but legal) sequence of moves from the
+  # starting position - for a teaching/exploration scenario the AI set up via
+  # its own `setup_position` tool (see SetupRequested, src/ai.cr), already
+  # validated once there against a throwaway board. Applied the same way
+  # `undo` rebuilds state - from scratch, since there's still no inverse of
+  # Board#turn to unwind the current position into this different one.
+  # Unlike `undo`, this doesn't try to land back on the human's turn -
+  # whichever side moves next from the requested position just moves next.
+  private def setup_position(moves : Array(String))
+    @board = Board.new
+    @board.setup
+    white = true
+    moves.each do |move|
+      unless @board.turn(move, white)
+        puts "setup stopped early - #{move} was illegal from that position (the moves applied before it are still in place)."
+        break
+      end
+      white = !white
+    end
+    @white = white
+
+    applied = @board.moves.map { |m| m.split(": ", 2).last }
+    @ai = AI.new(ai.skill_level, ai_white: !@human_white, resume_moves: applied)
+    @error_count = 0
+    @last_error = ""
+    save_progress
+
+    puts "position set up - #{applied.size} move#{applied.size == 1 ? "" : "s"} in. #{@white ? "white" : "black"}'s turn."
   end
 
   private def report_game_status(white : Bool)

@@ -4,6 +4,8 @@ require "time"
 require "./skill_level.cr"
 require "./game_over.cr"
 require "./undo_requested.cr"
+require "./setup_requested.cr"
+require "./board.cr"
 
 class AI
   property prev_tool_id : String?
@@ -133,7 +135,7 @@ class AI
       model:       MODEL,
       temperature: 0.3,
       messages:    @messages,
-      tools:       [moves_tool, board_tool, undo_tool],
+      tools:       [moves_tool, board_tool, undo_tool, setup_position_tool],
       tool_choice: "auto",
     }.to_json
 
@@ -149,10 +151,13 @@ class AI
     # Every tool_call in the message must get a matching tool response before
     # @messages is ever sent again, or the next request is rejected outright
     # (some providers, e.g. DeepSeek, enforce this strictly) - so all of them
-    # are answered here, not just the last one. "undo" is the exception - it
-    # raises straight out instead, since Chess#next_turn discards this entire
-    # AI (and its @messages, unanswered tool_call included) and builds a
-    # fresh one briefed on the rolled-back position, same as a resumed game.
+    # are answered here, not just the last one. "undo" and a validated
+    # "setup_position" are the exception - they raise straight out instead,
+    # since Chess#next_turn discards this entire AI (and its @messages,
+    # unanswered tool_call included) and builds a fresh one briefed on the
+    # new position, same as a resumed game. An invalid "setup_position" does
+    # get a normal tool response instead (the validation failure reason), so
+    # the model can retry with a corrected sequence in the same chat turn.
     tool_calls.as_a.each do |tool|
       tool_id = tool["id"].to_s
 
@@ -165,6 +170,21 @@ class AI
         count = args["count"]?.try(&.as_i?) || 1
         puts "undo called: #{count}"
         raise UndoRequested.new(count)
+      when "setup_position"
+        moves = begin
+          JSON.parse(tool["function"]["arguments"].to_s)["moves"].as_a.map(&.as_s)
+        rescue
+          nil
+        end
+        puts "setup_position called: #{moves ? moves.join(", ") : "(unparseable)"}"
+
+        if moves.nil?
+          @messages.push({tool_call_id: tool_id, role: "tool", name: "setup_position", content: "rejected: couldn't parse the moves list - call again with a \"moves\" array of strings in long algebraic notation."})
+        elsif (rejection = invalid_setup_reason(moves))
+          @messages.push({tool_call_id: tool_id, role: "tool", name: "setup_position", content: "rejected: #{rejection} Earlier moves in the sequence were fine - try again with a corrected sequence."})
+        else
+          raise SetupRequested.new(moves)
+        end
       else
         fen = board.to_fen(!@ai_white)
         puts "board called: #{fen}"
@@ -173,6 +193,28 @@ class AI
     end
 
     chat_loop(board)
+  end
+
+  # Replays `moves` on a throwaway Board (the live `board` passed to `chat`
+  # is left untouched here - this only checks whether the sequence is even
+  # legal before Chess#next_turn is asked to actually apply it) from the
+  # starting position, returning nil if every move is legal in sequence, or
+  # a description of the first illegal one otherwise - so a mistaken
+  # sequence from the model can be reported back and retried in the same
+  # chat turn instead of silently producing the wrong position.
+  private def invalid_setup_reason(moves : Array(String)) : String?
+    scratch = Board.new
+    scratch.setup
+    white = true
+
+    moves.each_with_index do |move, i|
+      unless scratch.turn(move, white)
+        return "move #{i + 1} (#{move}) is illegal - #{scratch.explain_invalid_move(move, white)}."
+      end
+      white = !white
+    end
+
+    nil
   end
 
   def next_move(board : Board, error : String? = nil) : String
@@ -322,6 +364,26 @@ class AI
             count: {
               type:        "integer",
               description: "how many of the human's own previous moves to go back - each one also undoes your reply to it. Defaults to 1 if omitted.",
+            },
+          },
+        },
+      },
+    }
+  end
+
+  private def setup_position_tool
+    {
+      type:     "function",
+      function: {
+        name:        "setup_position",
+        description: "Set up the board to a specific sequence of moves from the starting position - e.g. to show a known opening or a teaching scenario the human asked about. This replaces the current game's position entirely, so only call it when the human clearly describes a position or opening they want to see or practice, never on your own initiative. If the human's description is informal (names a piece/opening loosely, e.g. \"Ruy Lopez\" or \"knight to f3\"), translate it into the exact, correct long algebraic sequence yourself - an illegal or wrong sequence is rejected and you'll be told which move failed and why, so you can retry.",
+        parameters:  {
+          type:       "object",
+          properties: {
+            moves: {
+              type:        "array",
+              items:       {type: "string"},
+              description: "the full sequence of moves from the starting position, in long algebraic notation (e.g. e2e4), alternating white then black",
             },
           },
         },
