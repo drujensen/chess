@@ -185,10 +185,14 @@ class AI
         else
           raise SetupRequested.new(moves)
         end
-      else
+      when "board"
         fen = board.to_fen(!@ai_white)
         puts "board called: #{fen}"
         @messages.push({tool_call_id: tool_id, role: "tool", name: "board", content: fen})
+      else
+        name = tool["function"]["name"].to_s
+        puts "unknown tool called: #{name}"
+        @messages.push({tool_call_id: tool_id, role: "tool", name: name, content: "error: \"#{name}\" isn't available right now - choose one of moves, board, undo, or setup_position."})
       end
     end
 
@@ -308,16 +312,35 @@ class AI
       when "resign"
         puts "#{@ai_white ? "white" : "black"} resigns!"
         raise GameOver.new("#{@ai_white ? "white" : "black"} resigns - #{@ai_white ? "black" : "white"} wins!", @ai_white ? "0-1" : "1-0")
+      when "move"
+        next_move_candidate = JSON.parse(tool["function"]["arguments"].to_s)["nextMove"]?.try(&.as_s?).try(&.strip)
+        if next_move_candidate.nil? || next_move_candidate.empty?
+          @messages.push({
+            tool_call_id: tool_id,
+            role:         "tool",
+            name:         "move",
+            content:      "error: missing or empty \"nextMove\" argument - call move again with a single move in long algebraic notation.",
+          })
+        else
+          requested_move = next_move_candidate
+          @messages.push({
+            tool_call_id: tool_id,
+            role:         "tool",
+            name:         "move",
+            content:      "success",
+          })
+
+          puts "move called: #{requested_move}"
+        end
       else
-        requested_move = JSON.parse(tool["function"]["arguments"].to_s)["nextMove"].to_s.strip
+        name = tool["function"]["name"].to_s
+        puts "unknown tool called: #{name}"
         @messages.push({
           tool_call_id: tool_id,
           role:         "tool",
-          name:         "move",
-          content:      "success",
+          name:         name,
+          content:      "error: \"#{name}\" isn't available right now - choose one of moves, board, move, or resign.",
         })
-
-        puts "move called: #{requested_move}"
       end
     end
 
