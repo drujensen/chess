@@ -1,8 +1,11 @@
+require "time"
 require "./board.cr"
 require "./profile.cr"
 require "./analysis.cr"
 require "./stockfish.cr"
 require "./ai.cr"
+require "./saved_game.cr"
+require "./chess.cr"
 
 # Browse saved PGN files under ~/.chess/games and step through one move by
 # move. Resolves each file's SAN move list back to long-algebraic moves via
@@ -131,7 +134,7 @@ module Replay
       board.draw
       played = index > 0 ? " (#{moves[index - 1]})" : ""
       puts "move #{index}/#{moves.size}#{played}"
-      prompt = "[n]ext, [p]revious, [j]ump <n>, [q]uit"
+      prompt = "[n]ext, [p]revious, [j]ump <n>, [s]tart new game from here, [q]uit"
       prompt += ", [e]xplain" if flagged
       print "#{prompt} > "
       drain_stdin
@@ -144,6 +147,8 @@ module Replay
         index = Math.max(index - 1, 0)
       when "q", nil
         break
+      when "s"
+        break if start_new_game_from_here(moves[0...index], headers)
       when "e"
         if flagged
           begin
@@ -161,6 +166,43 @@ module Replay
         end
       end
     end
+  end
+
+  # Jumps out of a finished game's replay into live play from the position
+  # currently on screen - e.g. to try a different move at a spot that now
+  # looks like a mistake. Reuses the exact same SavedGame + Chess.new(saved)
+  # path a resumed in-progress game already takes - "the moves so far, a
+  # skill level, and which side the human plays" is exactly what that path
+  # already knows how to pick back up from, so nothing about replaying into
+  # live play needs its own separate setup logic. Returns false (without
+  # starting anything) if the human backs out of overwriting an existing
+  # in-progress game, so `step` knows to keep replaying rather than stop.
+  private def self.start_new_game_from_here(moves_so_far : Array(String), headers : Hash(String, String)) : Bool
+    if SavedGame.exists?
+      print "starting a new game here will discard your in-progress game - continue? (y/N) "
+      drain_stdin
+      confirm = gets.try(&.strip.downcase)
+      return false unless confirm == "y" || confirm == "yes"
+    end
+
+    # White/Black headers are always profile.name vs. the AI's own
+    # "AI (tier, ~elo)" string (see Chess#finish_game) - never two humans -
+    # so matching the profile's name back against them is a reliable way to
+    # recover which side the human was playing, even though the finished
+    # PGN itself has no dedicated field for it.
+    human_white = headers["White"]? == Profile.load.name
+
+    skill_level = SkillLevel.prompt
+
+    saved = SavedGame.new
+    saved.moves = moves_so_far
+    saved.skill_level = skill_level.to_s
+    saved.human_white = human_white
+    saved.saved_at = Time.local.to_s("%Y-%m-%d %H:%M:%S")
+
+    puts "starting a new game from move #{moves_so_far.size} - you are #{human_white ? "white" : "black"}."
+    Chess.new(saved).run
+    true
   end
 
   # Gets (or, the first time, computes and caches) a plain-language

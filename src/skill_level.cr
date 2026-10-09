@@ -49,6 +49,20 @@ enum SkillLevel
     end
   end
 
+  # Prompts for and returns a skill level, defaulting to Advanced on blank or
+  # unrecognized input - shared by Chess#select_skill_level (a new game) and
+  # Replay#start_new_game_from_here (jumping into live play from a replayed
+  # position), since both need the exact same prompt/parse.
+  def self.prompt : SkillLevel
+    puts "Select opponent skill level:"
+    values.each_with_index do |level, i|
+      puts "#{i + 1}) #{level} (#{level.elo_range} Elo)"
+    end
+    print "> "
+    drain_stdin
+    from_input(gets || "") || Advanced
+  end
+
   def self.from_input(input : String) : SkillLevel?
     case input.strip.downcase
     when "1", "novice"       then Novice

@@ -5,6 +5,7 @@ require "./profile.cr"
 require "./game_over.cr"
 require "./undo_requested.cr"
 require "./setup_requested.cr"
+require "./move_requested.cr"
 require "./replay.cr"
 require "./saved_game.cr"
 
@@ -55,22 +56,12 @@ class Chess
       @ai = AI.new(skill_level, ai_white: !@human_white, resume_moves: saved.moves)
       puts "resumed game (#{skill_level}, you are #{@human_white ? "white" : "black"}) - #{saved.moves.size} moves replayed. #{@white ? "white" : "black"}'s turn."
     else
-      skill_level = select_skill_level
+      skill_level = SkillLevel.prompt
       @human_white = select_side
       @ai = AI.new(skill_level, ai_white: !@human_white)
       @white = true
       puts "you are playing #{@human_white ? "white" : "black"}."
     end
-  end
-
-  def select_skill_level : SkillLevel
-    puts "Select opponent skill level:"
-    SkillLevel.values.each_with_index do |level, i|
-      puts "#{i + 1}) #{level} (#{level.elo_range} Elo)"
-    end
-    print "> "
-    drain_stdin
-    SkillLevel.from_input(gets || "") || SkillLevel::Advanced
   end
 
   def select_side : Bool
@@ -112,19 +103,29 @@ class Chess
     if move
       if humans_turn && !(move =~ /^\D\d(x)?\D\d$/)
         resolved = ai.resolve_move(board, move, @human_white)
-        if resolved.nil?
+        if resolved
+          puts "playing #{resolved} for you."
+          ai.record_move_resolution(move, resolved)
+          move = resolved
+        else
+          played_for_human = nil
           begin
             puts ai.chat(board, move)
           rescue ex : UndoRequested
             undo(ex.count)
+            return
           rescue ex : SetupRequested
             setup_position(ex.moves)
+            return
+          rescue ex : MoveRequested
+            played_for_human = ex.move
           end
-          return
+          return if played_for_human.nil?
+
+          puts "playing #{played_for_human} for you."
+          ai.record_move_resolution(move, played_for_human)
+          move = played_for_human
         end
-        puts "playing #{resolved} for you."
-        ai.record_move_resolution(move, resolved)
-        move = resolved
       end
 
       if board.turn(move, @white)

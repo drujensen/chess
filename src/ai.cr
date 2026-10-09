@@ -5,6 +5,7 @@ require "./skill_level.cr"
 require "./game_over.cr"
 require "./undo_requested.cr"
 require "./setup_requested.cr"
+require "./move_requested.cr"
 require "./board.cr"
 
 class AI
@@ -135,7 +136,7 @@ class AI
       model:       MODEL,
       temperature: 0.3,
       messages:    @messages,
-      tools:       [moves_tool, board_tool, undo_tool, setup_position_tool],
+      tools:       [moves_tool, board_tool, undo_tool, setup_position_tool, play_for_human_tool],
       tool_choice: "auto",
     }.to_json
 
@@ -189,10 +190,22 @@ class AI
         fen = board.to_fen(!@ai_white)
         puts "board called: #{fen}"
         @messages.push({tool_call_id: tool_id, role: "tool", name: "board", content: fen})
+      when "play_for_human"
+        candidate = JSON.parse(tool["function"]["arguments"].to_s)["nextMove"]?.try(&.as_s?).try(&.strip)
+        legal = board.legal_moves(!@ai_white)
+
+        if candidate.nil? || candidate.empty?
+          @messages.push({tool_call_id: tool_id, role: "tool", name: "play_for_human", content: "error: missing or empty \"nextMove\" argument - call again with one of the human's legal moves in long algebraic notation."})
+        elsif !legal.includes?(candidate)
+          @messages.push({tool_call_id: tool_id, role: "tool", name: "play_for_human", content: "error: \"#{candidate}\" isn't one of the human's legal moves right now: #{legal.join(", ")}. call again with one of these exactly."})
+        else
+          puts "play_for_human called: #{candidate}"
+          raise MoveRequested.new(candidate)
+        end
       else
         name = tool["function"]["name"].to_s
         puts "unknown tool called: #{name}"
-        @messages.push({tool_call_id: tool_id, role: "tool", name: name, content: "error: \"#{name}\" isn't available right now - choose one of moves, board, undo, or setup_position."})
+        @messages.push({tool_call_id: tool_id, role: "tool", name: name, content: "error: \"#{name}\" isn't available right now - choose one of moves, board, undo, setup_position, or play_for_human."})
       end
     end
 
@@ -407,6 +420,25 @@ class AI
               type:        "array",
               items:       {type: "string"},
               description: "the full sequence of moves from the starting position, in long algebraic notation (e.g. e2e4), alternating white then black",
+            },
+          },
+        },
+      },
+    }
+  end
+
+  private def play_for_human_tool
+    {
+      type:     "function",
+      function: {
+        name:        "play_for_human",
+        description: "Play a move on the human's behalf, when they clearly ask you to choose and make their move for them (e.g. \"move for me\", \"you choose\", \"just play something\"). Pick a reasonable legal move for their side - you don't need to find the objectively best move, just a sound one. Only call this when the human clearly asks you to play for them - never on your own initiative, and never when they're just asking about or discussing a move rather than asking you to play it.",
+        parameters:  {
+          type:       "object",
+          properties: {
+            nextMove: {
+              type:        "string",
+              description: "the move to play for the human, in long algebraic notation i.e. e2e4 - must be one of their actual current legal moves",
             },
           },
         },
