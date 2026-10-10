@@ -6,6 +6,7 @@ require "./game_over.cr"
 require "./undo_requested.cr"
 require "./setup_requested.cr"
 require "./move_requested.cr"
+require "./game_log.cr"
 require "./replay.cr"
 require "./saved_game.cr"
 
@@ -294,6 +295,7 @@ class Chess
   rescue ex
     @board.draw(!@human_white)
     puts ex.message
+    GameLog.error("Chess#run ended", ex)
   end
 end
 

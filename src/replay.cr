@@ -5,6 +5,7 @@ require "./analysis.cr"
 require "./stockfish.cr"
 require "./ai.cr"
 require "./saved_game.cr"
+require "./game_log.cr"
 require "./chess.cr"
 
 # Browse saved PGN files under ~/.chess/games and step through one move by
@@ -155,6 +156,7 @@ module Replay
             notes = explain(notes, moves, index, path, headers)
           rescue ex
             puts "couldn't get an explanation: #{ex.message}"
+            GameLog.error("Replay#explain failed", ex)
           end
         else
           puts "nothing to explain here - this move wasn't flagged."

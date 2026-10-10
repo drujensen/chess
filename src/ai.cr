@@ -7,6 +7,7 @@ require "./undo_requested.cr"
 require "./setup_requested.cr"
 require "./move_requested.cr"
 require "./board.cr"
+require "./game_log.cr"
 
 class AI
   property prev_tool_id : String?
@@ -66,7 +67,7 @@ class AI
     @messages.push(
       {
         role:    "system",
-        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is #{human_color} and you are #{ai_color}. There are 4 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. move: play the next move. resign: give up the game if your position is truly lost (e.g. you're getting checkmated soon with no way out, or you've lost overwhelming material with no compensation) - only resign when it's genuinely hopeless, not just because you're slightly worse. You have about #{TIMEOUT.total_seconds.to_i} seconds to reply each time you're asked something - don't overthink it, decide promptly and call the relevant function.",
+        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is #{human_color} and you are #{ai_color}. There are 4 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. move: play the next move. resign: give up the game, but only for (a) a forced checkmate you can actually see coming within the next couple of moves with no defense, or (b) a material deficit of a full rook or more (not just a pawn, and not just a single minor piece) with no tactical compensation and no realistic swindle chances left. Being clearly worse, or down a pawn, or even down one minor piece, is not enough on its own - keep playing those out. If you're unsure whether it's bad enough, don't resign. You have about #{TIMEOUT.total_seconds.to_i} seconds to reply each time you're asked something - don't overthink it, decide promptly and call the relevant function.",
       }
     )
 
@@ -82,8 +83,24 @@ class AI
   # `moves`/`board` tools next_move gets, minus `move` itself - chat can look
   # but not touch the game state. Pushes the human's message once, then loops
   # on tool calls without re-pushing it.
+  #
+  # Chess#next_turn only ever calls this after AI#resolve_move has already
+  # failed to resolve `text` into one of the human's current legal moves -
+  # the model isn't told that on its own, and its own message history is full
+  # of "(played X)" confirmations from genuinely-resolved moves
+  # (#record_move_resolution), so on a near-miss like a typo'd move it would
+  # sometimes just free-text echo that same "(played X)" phrasing as its chat
+  # reply without actually calling a tool - nothing on the board ever
+  # changes, since next_turn only reacts to a real MoveRequested/
+  # UndoRequested/SetupRequested exception, but the human reading that reply
+  # reasonably believed their move had been played. The reminder below heads
+  # that off by naming the actual situation explicitly.
   def chat(board : Board, text : String) : String
     @messages.push({role: "user", content: text})
+    @messages.push({
+      role:    "system",
+      content: "That didn't automatically resolve to one of the human's current legal moves, so it's reaching you as a chat message instead. If it looks like they meant to make a move, tell them it wasn't recognized (use the board/moves tools if you need to check the position) so they can try again with clearer notation - never say or imply that a move was played unless you actually call play_for_human. If it's a genuine question or comment instead, just answer it normally.",
+    })
     chat_loop(board)
   end
 
@@ -164,12 +181,12 @@ class AI
 
       case tool["function"]["name"]
       when "moves"
-        puts "moves called: #{board.moves.join(", ")}"
+        GameLog.info("chat: moves called: #{board.moves.join(", ")}")
         @messages.push({tool_call_id: tool_id, role: "tool", name: "moves", content: board.moves.join(", ")})
       when "undo"
         args = JSON.parse(tool["function"]["arguments"].to_s)
         count = args["count"]?.try(&.as_i?) || 1
-        puts "undo called: #{count}"
+        GameLog.info("chat: undo called: #{count}")
         raise UndoRequested.new(count)
       when "setup_position"
         moves = begin
@@ -177,7 +194,7 @@ class AI
         rescue
           nil
         end
-        puts "setup_position called: #{moves ? moves.join(", ") : "(unparseable)"}"
+        GameLog.info("chat: setup_position called: #{moves ? moves.join(", ") : "(unparseable)"}")
 
         if moves.nil?
           @messages.push({tool_call_id: tool_id, role: "tool", name: "setup_position", content: "rejected: couldn't parse the moves list - call again with a \"moves\" array of strings in long algebraic notation."})
@@ -188,7 +205,7 @@ class AI
         end
       when "board"
         fen = board.to_fen(!@ai_white)
-        puts "board called: #{fen}"
+        GameLog.info("chat: board called: #{fen}")
         @messages.push({tool_call_id: tool_id, role: "tool", name: "board", content: fen})
       when "play_for_human"
         candidate = JSON.parse(tool["function"]["arguments"].to_s)["nextMove"]?.try(&.as_s?).try(&.strip)
@@ -199,12 +216,12 @@ class AI
         elsif !legal.includes?(candidate)
           @messages.push({tool_call_id: tool_id, role: "tool", name: "play_for_human", content: "error: \"#{candidate}\" isn't one of the human's legal moves right now: #{legal.join(", ")}. call again with one of these exactly."})
         else
-          puts "play_for_human called: #{candidate}"
+          GameLog.info("chat: play_for_human called: #{candidate}")
           raise MoveRequested.new(candidate)
         end
       else
         name = tool["function"]["name"].to_s
-        puts "unknown tool called: #{name}"
+        GameLog.error("chat: unknown tool called: #{name}")
         @messages.push({tool_call_id: tool_id, role: "tool", name: name, content: "error: \"#{name}\" isn't available right now - choose one of moves, board, undo, setup_position, or play_for_human."})
       end
     end
@@ -288,7 +305,7 @@ class AI
     tool_calls = message["tool_calls"]?
 
     if tool_calls.nil?
-      puts message["content"]
+      GameLog.info("next_move: replied without a tool call: #{message["content"]}")
       return next_move_loop(board)
     end
 
@@ -306,7 +323,7 @@ class AI
 
       case tool["function"]["name"]
       when "moves"
-        puts "moves called: #{board.moves.join(", ")}"
+        GameLog.info("next_move: moves called: #{board.moves.join(", ")}")
         @messages.push({
           tool_call_id: tool_id,
           role:         "tool",
@@ -315,7 +332,7 @@ class AI
         })
       when "board"
         fen = board.to_fen(@ai_white)
-        puts "board called: #{fen}"
+        GameLog.info("next_move: board called: #{fen}")
         @messages.push({
           tool_call_id: tool_id,
           role:         "tool",
@@ -323,7 +340,7 @@ class AI
           content:      fen,
         })
       when "resign"
-        puts "#{@ai_white ? "white" : "black"} resigns!"
+        GameLog.info("next_move: #{@ai_white ? "white" : "black"} resigns")
         raise GameOver.new("#{@ai_white ? "white" : "black"} resigns - #{@ai_white ? "black" : "white"} wins!", @ai_white ? "0-1" : "1-0")
       when "move"
         next_move_candidate = JSON.parse(tool["function"]["arguments"].to_s)["nextMove"]?.try(&.as_s?).try(&.strip)
@@ -343,11 +360,11 @@ class AI
             content:      "success",
           })
 
-          puts "move called: #{requested_move}"
+          GameLog.info("next_move: move called: #{requested_move}")
         end
       else
         name = tool["function"]["name"].to_s
-        puts "unknown tool called: #{name}"
+        GameLog.error("next_move: unknown tool called: #{name}")
         @messages.push({
           tool_call_id: tool_id,
           role:         "tool",
@@ -470,7 +487,7 @@ class AI
       type:     "function",
       function: {
         name:        "resign",
-        description: "resign the game - only when your position is genuinely hopeless, not just worse",
+        description: "resign the game - only for a forced checkmate you can see coming within the next couple of moves, or a material deficit of a full rook or more with no compensation and no swindle chances left. Being down a pawn or a single minor piece is not enough on its own - keep playing those out.",
         parameters:  {
           type:       "object",
           properties: {} of String => String,
@@ -557,6 +574,7 @@ class AI
         response = with_spinner { @client.post(ENDPOINT_PATH, headers: build_headers, body: body) }
         return JSON.parse(response.body) if response.success?
         last_error = "HTTP #{response.status_code}: #{response.body}"
+        GameLog.error("request attempt #{retry_count + 1}/3 failed: #{last_error}")
       rescue e : IO::TimeoutError
         # re-raised, not retried here - caught below by the method-level
         # rescue, same as if it had propagated straight out of the loop
@@ -569,6 +587,7 @@ class AI
         # closing forces a fresh connection on the next attempt
         @client.close
         last_error = "connection dropped (#{e.message})"
+        GameLog.error("request attempt #{retry_count + 1}/3 failed: #{last_error}", e)
       end
       retry_count += 1
     end
