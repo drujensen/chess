@@ -256,6 +256,21 @@ class Board
     !in_check?(white) && legal_moves(white).empty?
   end
 
+  # True once `white`'s only remaining pieces (besides the king) are pawns -
+  # a hard, checkable fact used to gate resignation (see AI#next_move_loop's
+  # "resign" tool and Chess#next_turn's human-typed "resign") instead of
+  # trusting a model's own read of "hopeless", which has repeatedly resigned
+  # with a whole minor piece (and a handful of pawns) still on the board.
+  def only_pawns_left?(white : Bool) : Bool
+    (0..7).all? do |y|
+      (0..7).all? do |x|
+        piece = @pieces[y][x]
+        next true if piece.white != white
+        piece.is_a?(Pawn) || piece.is_a?(King)
+      end
+    end
+  end
+
   # Retraces #turn's own legality checks, in the same order, to explain why
   # a rejected move was rejected - so the human/AI gets a concrete reason
   # ("that leaves your king in check") instead of a bare "invalid move".

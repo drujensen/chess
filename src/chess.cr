@@ -90,7 +90,13 @@ class Chess
       move = input.strip
       move = nil if move.empty?
       raise "game saved - see you next time!" if move && ["quit", "exit", "save"].includes?(move.downcase)
-      raise GameOver.new("you resign - #{@human_white ? "black" : "white"} wins!", @human_white ? "0-1" : "1-0") if move && move.downcase == "resign"
+      if move && move.downcase == "resign"
+        unless board.only_pawns_left?(@human_white)
+          puts "you still have a piece other than pawns on the board - you can't resign yet. Keep playing, or type \"quit\" to pause the game instead."
+          return
+        end
+        raise GameOver.new("you resign - #{@human_white ? "black" : "white"} wins!", @human_white ? "0-1" : "1-0")
+      end
 
       if move && (undo_match = move.downcase.match(/^undo(?:\s+(\d+))?$/))
         undo((undo_match[1]? || "1").to_i)

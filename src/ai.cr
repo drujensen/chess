@@ -67,7 +67,7 @@ class AI
     @messages.push(
       {
         role:    "system",
-        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is #{human_color} and you are #{ai_color}. There are 4 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. move: play the next move. resign: give up the game, but only for (a) a forced checkmate you can actually see coming within the next couple of moves with no defense, or (b) a material deficit of a full rook or more (not just a pawn, and not just a single minor piece) with no tactical compensation and no realistic swindle chances left. Being clearly worse, or down a pawn, or even down one minor piece, is not enough on its own - keep playing those out. If you're unsure whether it's bad enough, don't resign. You have about #{TIMEOUT.total_seconds.to_i} seconds to reply each time you're asked something - don't overthink it, decide promptly and call the relevant function.",
+        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is #{human_color} and you are #{ai_color}. There are 4 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. move: play the next move. resign: give up the game - but this is only even allowed once you have nothing left but pawns (and your king); it's rejected otherwise, no matter how far behind you are. Even once you're down to just pawns, only actually call it for a forced checkmate you can see coming with no defense, or a hopeless pawn ending with no realistic chance to draw or swindle something - a single piece (bishop, knight, rook, or queen) still on the board, of either color, is always a reason to keep playing it out. You have about #{TIMEOUT.total_seconds.to_i} seconds to reply each time you're asked something - don't overthink it, decide promptly and call the relevant function.",
       }
     )
 
@@ -340,8 +340,18 @@ class AI
           content:      fen,
         })
       when "resign"
-        GameLog.info("next_move: #{@ai_white ? "white" : "black"} resigns")
-        raise GameOver.new("#{@ai_white ? "white" : "black"} resigns - #{@ai_white ? "black" : "white"} wins!", @ai_white ? "0-1" : "1-0")
+        if board.only_pawns_left?(@ai_white)
+          GameLog.info("next_move: #{@ai_white ? "white" : "black"} resigns")
+          raise GameOver.new("#{@ai_white ? "white" : "black"} resigns - #{@ai_white ? "black" : "white"} wins!", @ai_white ? "0-1" : "1-0")
+        else
+          GameLog.info("next_move: resign rejected - #{@ai_white ? "white" : "black"} still has a piece besides pawns")
+          @messages.push({
+            tool_call_id: tool_id,
+            role:         "tool",
+            name:         "resign",
+            content:      "rejected: you still have at least one piece other than pawns on the board - you can't resign yet. Keep playing; call board if you need to re-check the position.",
+          })
+        end
       when "move"
         next_move_candidate = JSON.parse(tool["function"]["arguments"].to_s)["nextMove"]?.try(&.as_s?).try(&.strip)
         if next_move_candidate.nil? || next_move_candidate.empty?
@@ -487,7 +497,7 @@ class AI
       type:     "function",
       function: {
         name:        "resign",
-        description: "resign the game - only for a forced checkmate you can see coming within the next couple of moves, or a material deficit of a full rook or more with no compensation and no swindle chances left. Being down a pawn or a single minor piece is not enough on its own - keep playing those out.",
+        description: "resign the game - rejected unless you have nothing left but pawns and your king. Even then, only call it for a forced checkmate you can see coming, or a truly hopeless pawn ending.",
         parameters:  {
           type:       "object",
           properties: {} of String => String,

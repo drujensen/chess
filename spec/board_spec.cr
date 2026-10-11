@@ -20,6 +20,26 @@ describe Board do
     end
   end
 
+  describe "#only_pawns_left?" do
+    it "is false at the start of the game" do
+      board = Board.new
+      board.setup
+      board.only_pawns_left?(true).should be_false
+      board.only_pawns_left?(false).should be_false
+    end
+
+    it "is true once a side has nothing left but pawns and its king" do
+      board = Board.new
+      board.pieces[0][4] = King.new(true)
+      board.pieces[7][4] = King.new(false)
+      board.pieces[1][0] = Pawn.new(true)
+      board.pieces[1][1] = Pawn.new(true)
+      board.pieces[6][7] = Bishop.new(false)
+      board.only_pawns_left?(true).should be_true
+      board.only_pawns_left?(false).should be_false
+    end
+  end
+
   describe "#draw_by_fifty_move_rule?" do
     it "resets the clock on a pawn move or capture, and increments otherwise" do
       board = Board.new
