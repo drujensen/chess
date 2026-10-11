@@ -1,6 +1,15 @@
 require "./pieces/*"
 
 class Board
+  # Grayscale square backgrounds, and a muted gold-tinted variant of each
+  # for whichever two squares the last move actually touched - a step up in
+  # contrast rather than a loud, unrelated color, so the move is easy to
+  # spot at a glance without the board looking like it's flagging anything.
+  LIGHT_SQUARE           =  243
+  DARK_SQUARE            =  240
+  LIGHT_SQUARE_HIGHLIGHT =  143
+  DARK_SQUARE_HIGHLIGHT  =  101
+
   property pieces : Array(Array(ChessMan))
   property white_captured : Array(ChessMan)
   property black_captured : Array(ChessMan)
@@ -8,6 +17,8 @@ class Board
   property sans : Array(String)
   property halfmove_clock : Int32
   property position_counts : Hash(String, Int32)
+  property last_move_from : Spot?
+  property last_move_to : Spot?
 
   def initialize
     @pieces = Array(Array(ChessMan)).new(8) do
@@ -21,6 +32,8 @@ class Board
     @sans = Array(String).new
     @halfmove_clock = 0
     @position_counts = Hash(String, Int32).new(0)
+    @last_move_from = nil
+    @last_move_to = nil
   end
 
   def setup
@@ -193,6 +206,9 @@ class Board
       san_prefix += "+"
     end
     @sans << san_prefix
+
+    @last_move_from = Spot.new(from_x, from_y)
+    @last_move_to = Spot.new(to_x, to_y)
 
     return true
   end
@@ -533,7 +549,14 @@ class Board
     ranks.each do |y|
       row = String.build do |str|
         files.each do |x|
-          color = (x + y).even? ? 243 : 240
+          light = (x + y).even?
+          spot = Spot.new(x, y)
+          highlighted = last_move_from == spot || last_move_to == spot
+          color = if highlighted
+                    light ? LIGHT_SQUARE_HIGHLIGHT : DARK_SQUARE_HIGHLIGHT
+                  else
+                    light ? LIGHT_SQUARE : DARK_SQUARE
+                  end
           str << "\e[48;5;#{color}m#{pieces[y][x].draw}"
         end
       end
