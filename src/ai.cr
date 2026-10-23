@@ -79,12 +79,21 @@ class AI
     @client.read_timeout = TIMEOUT
     @messages = [] of NamedTuple(role: String, content: String) | NamedTuple(tool_call_id: String, role: String, name: String, content: String) | JSON::Any
 
+    # Best-effort hint to a local Ollama server to turn on a reasoning model's
+    # extended-thinking mode (e.g. qwen3's `think` request field) before
+    # picking a move - detected by host rather than by provider name, so it
+    # also covers the no-CHESS_PROVIDER-set default (localhost:11434, no api
+    # key) the same way as an opponents.json entry with provider: "ollama".
+    # Cloud providers never get this field, since several of them (e.g. the
+    # real OpenAI API) reject unrecognized request parameters outright.
+    @think = @api_key.nil? && @base_uri.host.in?({"localhost", "127.0.0.1"})
+
     human_color = @ai_white ? "black" : "white"
     ai_color = @ai_white ? "white" : "black"
     @messages.push(
       {
         role:    "system",
-        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is #{human_color} and you are #{ai_color}. There are 4 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. move: play the next move. resign: give up the game - but this is only even allowed once you have nothing left but pawns (and your king); it's rejected otherwise, no matter how far behind you are. Even once you're down to just pawns, only actually call it for a forced checkmate you can see coming with no defense, or a hopeless pawn ending with no realistic chance to draw or swindle something - a single piece (bishop, knight, rook, or queen) still on the board, of either color, is always a reason to keep playing it out. You have about #{TIMEOUT.total_seconds.to_i} seconds to reply each time you're asked something - don't overthink it, decide promptly and call the relevant function.",
+        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is #{human_color} and you are #{ai_color}. There are 4 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. move: play the next move. resign: give up the game - but this is only even allowed once you have nothing left but pawns (and your king); it's rejected otherwise, no matter how far behind you are. Even once you're down to just pawns, only actually call it for a forced checkmate you can see coming with no defense, or a hopeless pawn ending with no realistic chance to draw or swindle something - a single piece (bishop, knight, rook, or queen) still on the board, of either color, is always a reason to keep playing it out. You have about #{TIMEOUT.total_seconds.to_i} seconds to reply each time you're asked something, which is enough time to actually calculate - before calling move, work out concretely whether your candidate hangs a piece, allows a tactic, or ignores a threat from the opponent's last move, and check your opponent's best reply to it. Play at the real strength of a #{skill_level.to_s.downcase}, #{skill_level.elo_range} Elo - that means genuinely calculating, not just pattern-matching the first reasonable-looking move.",
       }
     )
 
@@ -306,18 +315,24 @@ class AI
   end
 
   private def next_move_loop(board : Board) : String
-    body = {
-      model:       @model,
-      temperature: 0.3,
-      messages:    @messages,
-      tools:       [moves_tool, board_tool, move_tool, resign_tool],
-      tool_choice: "auto",
-    }.to_json
+    tools = [moves_tool, board_tool, move_tool, resign_tool]
+    body = if @think
+             {model: @model, temperature: 0.3, messages: @messages, tools: tools, tool_choice: "auto", think: true}.to_json
+           else
+             {model: @model, temperature: 0.3, messages: @messages, tools: tools, tool_choice: "auto"}.to_json
+           end
 
     result = post_chat_completion(body)
 
     choices = result["choices"]
     message = choices[choices.size - 1]["message"]
+
+    # Ollama surfaces a thinking model's reasoning under one of a few field
+    # names depending on endpoint/version - logged for visibility (not shown
+    # in the terminal, same as other tool-call chatter) rather than relied on,
+    # since whichever field is actually present is best-effort.
+    reasoning = message["thinking"]? || message["reasoning_content"]? || message["reasoning"]?
+    GameLog.info("next_move: reasoning: #{reasoning}") if reasoning
 
     tool_calls = message["tool_calls"]?
 
