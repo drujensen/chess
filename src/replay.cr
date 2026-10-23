@@ -4,6 +4,7 @@ require "./profile.cr"
 require "./analysis.cr"
 require "./stockfish.cr"
 require "./ai.cr"
+require "./opponent.cr"
 require "./saved_game.cr"
 require "./game_log.cr"
 require "./chess.cr"
@@ -135,7 +136,7 @@ module Replay
       board.draw
       played = index > 0 ? " (#{moves[index - 1]})" : ""
       puts "move #{index}/#{moves.size}#{played}"
-      prompt = "[n]ext, [p]revious, [j]ump <n>, [s]tart new game from here, [q]uit"
+      prompt = "[n]ext, [p]revious, [j]ump <n>, [f]ork, [q]uit"
       prompt += ", [e]xplain" if flagged
       print "#{prompt} > "
       drain_stdin
@@ -148,8 +149,8 @@ module Replay
         index = Math.max(index - 1, 0)
       when "q", nil
         break
-      when "s"
-        break if start_new_game_from_here(moves[0...index], headers)
+      when "f"
+        break if fork_new_game_from_here(moves[0...index], headers)
       when "e"
         if flagged
           begin
@@ -179,7 +180,7 @@ module Replay
   # live play needs its own separate setup logic. Returns false (without
   # starting anything) if the human backs out of overwriting an existing
   # in-progress game, so `step` knows to keep replaying rather than stop.
-  private def self.start_new_game_from_here(moves_so_far : Array(String), headers : Hash(String, String)) : Bool
+  private def self.fork_new_game_from_here(moves_so_far : Array(String), headers : Hash(String, String)) : Bool
     if SavedGame.exists?
       print "starting a new game here will discard your in-progress game - continue? (y/N) "
       drain_stdin
@@ -195,11 +196,13 @@ module Replay
     human_white = headers["White"]? == Profile.load.name
 
     skill_level = SkillLevel.prompt
+    opponent = Opponent.prompt
 
     saved = SavedGame.new
     saved.moves = moves_so_far
     saved.skill_level = skill_level.to_s
     saved.human_white = human_white
+    saved.opponent_name = opponent.name
     saved.saved_at = Time.local.to_s("%Y-%m-%d %H:%M:%S")
 
     puts "starting a new game from move #{moves_so_far.size} - you are #{human_white ? "white" : "black"}."

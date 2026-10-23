@@ -10,6 +10,7 @@ class SavedGame
   property moves : Array(String) = [] of String
   property skill_level : String = "Advanced"
   property human_white : Bool = true
+  property opponent_name : String? = nil
   property saved_at : String = ""
 
   def initialize

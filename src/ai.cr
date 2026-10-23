@@ -8,10 +8,13 @@ require "./setup_requested.cr"
 require "./move_requested.cr"
 require "./board.cr"
 require "./game_log.cr"
+require "./opponent.cr"
 
 class AI
   property prev_tool_id : String?
   property skill_level : SkillLevel
+  getter model : String
+  getter base_url : String
   @api_key : String?
 
   # CHESS_PROVIDER picks one of these so switching providers is one env var
@@ -55,9 +58,23 @@ class AI
   # black, starting with white), when picking a previously-saved game back
   # up. The exact prior conversation can't be restored, so instead the model
   # is briefed with the game-so-far as its first message.
-  def initialize(@skill_level : SkillLevel = SkillLevel::Advanced, @ai_white : Bool = false, resume_moves : Array(String)? = nil)
-    @api_key = ENV["CHESS_API_KEY"]? || AI.provider_config.try(&.[:key_env]).try { |key_env| ENV[key_env]? }
-    @client = HTTP::Client.new(BASE_URI)
+  #
+  # opponent: the provider/model picked from Opponent.prompt's menu (nil
+  # falls back to the CHESS_PROVIDER/CHESS_BASE_URL/CHESS_MODEL env-var
+  # constants below, same as before this existed - resolve_move/explain_move
+  # callers that build a stateless one-off AI.new with no opponent, e.g.
+  # Replay#explain, still get that env-based default).
+  def initialize(@skill_level : SkillLevel = SkillLevel::Advanced, @ai_white : Bool = false, resume_moves : Array(String)? = nil, opponent : Opponent? = nil)
+    @model = opponent.try(&.model) || MODEL
+    @base_url = opponent.try(&.resolve_base_url) || BASE_URL
+    @base_uri = URI.parse(@base_url)
+    @endpoint_path = "#{@base_uri.path}/chat/completions"
+    @api_key = if opponent
+                 opponent.resolve_api_key
+               else
+                 ENV["CHESS_API_KEY"]? || AI.provider_config.try(&.[:key_env]).try { |key_env| ENV[key_env]? }
+               end
+    @client = HTTP::Client.new(@base_uri)
     @client.connect_timeout = CONNECT_TIMEOUT
     @client.read_timeout = TIMEOUT
     @messages = [] of NamedTuple(role: String, content: String) | NamedTuple(tool_call_id: String, role: String, name: String, content: String) | JSON::Any
@@ -141,7 +158,7 @@ class AI
       },
       {role: "user", content: prompt},
     ]
-    body = {model: MODEL, temperature: 0.3, messages: messages}.to_json
+    body = {model: @model, temperature: 0.3, messages: messages}.to_json
 
     result = post_chat_completion(body)
     choices = result["choices"]
@@ -150,7 +167,7 @@ class AI
 
   private def chat_loop(board : Board) : String
     body = {
-      model:       MODEL,
+      model:       @model,
       temperature: 0.3,
       messages:    @messages,
       tools:       [moves_tool, board_tool, undo_tool, setup_position_tool, play_for_human_tool],
@@ -290,7 +307,7 @@ class AI
 
   private def next_move_loop(board : Board) : String
     body = {
-      model:       MODEL,
+      model:       @model,
       temperature: 0.3,
       messages:    @messages,
       tools:       [moves_tool, board_tool, move_tool, resign_tool],
@@ -527,7 +544,7 @@ class AI
       },
     ]
     body = {
-      model:       MODEL,
+      model:       @model,
       temperature: 0.2,
       messages:    messages,
       tools:       [
@@ -581,7 +598,7 @@ class AI
 
     while retry_count < 3
       begin
-        response = with_spinner { @client.post(ENDPOINT_PATH, headers: build_headers, body: body) }
+        response = with_spinner { @client.post(@endpoint_path, headers: build_headers, body: body) }
         return JSON.parse(response.body) if response.success?
         last_error = "HTTP #{response.status_code}: #{response.body}"
         GameLog.error("request attempt #{retry_count + 1}/3 failed: #{last_error}")
@@ -601,11 +618,11 @@ class AI
       end
       retry_count += 1
     end
-    raise "request to #{BASE_URL} failed after 3 attempts - #{last_error}"
+    raise "request to #{@base_url} failed after 3 attempts - #{last_error}"
   rescue e : IO::TimeoutError
     # not retried - the model was already given the full timeout once, and
     # trying again with the same budget just multiplies the wait
-    raise "#{MODEL} didn't respond within #{TIMEOUT.total_seconds.to_i}s (set CHESS_TIMEOUT to change this) - it may be stuck or overloaded."
+    raise "#{@model} didn't respond within #{TIMEOUT.total_seconds.to_i}s (set CHESS_TIMEOUT to change this) - it may be stuck or overloaded."
   end
 
   SPINNER_FRAMES = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}

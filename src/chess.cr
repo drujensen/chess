@@ -1,6 +1,7 @@
 require "time"
 require "./board.cr"
 require "./ai.cr"
+require "./opponent.cr"
 require "./profile.cr"
 require "./game_over.cr"
 require "./undo_requested.cr"
@@ -36,31 +37,37 @@ class Chess
   property error_count : Int32
   property last_error : String
   property last_move : NamedTuple(tool_call_id: String, move: String)? = nil
+  property opponent : Opponent?
 
   def initialize(saved : SavedGame? = nil)
     @board = Board.new
     @board.setup
     @profile = Profile.load
     puts "#{profile.name}'s rating: #{profile.rating.round(1)} (#{profile.games_played} games played)"
-    puts "opponent: #{AI::MODEL} @ #{AI::BASE_URL}"
     @error_count = 0
     @last_error = ""
 
     if saved
       skill_level = SkillLevel.from_input(saved.skill_level) || SkillLevel::Advanced
       @human_white = saved.human_white
+      # A save from before opponents.json existed has no opponent_name - nil
+      # here falls back to AI.new's own env-based default, same as always.
+      @opponent = saved.opponent_name.try { |name| Opponent.find_by_name(name) }
       @white = true
       saved.moves.each do |move|
         @board.turn(move, @white)
         @white = !@white
       end
-      @ai = AI.new(skill_level, ai_white: !@human_white, resume_moves: saved.moves)
+      @ai = AI.new(skill_level, ai_white: !@human_white, resume_moves: saved.moves, opponent: @opponent)
+      puts "opponent: #{@ai.model} @ #{@ai.base_url}"
       puts "resumed game (#{skill_level}, you are #{@human_white ? "white" : "black"}) - #{saved.moves.size} moves replayed. #{@white ? "white" : "black"}'s turn."
     else
       skill_level = SkillLevel.prompt
+      @opponent = Opponent.prompt
       @human_white = select_side
-      @ai = AI.new(skill_level, ai_white: !@human_white)
+      @ai = AI.new(skill_level, ai_white: !@human_white, opponent: @opponent)
       @white = true
+      puts "opponent: #{@ai.model} @ #{@ai.base_url}"
       puts "you are playing #{@human_white ? "white" : "black"}."
     end
   end
@@ -188,7 +195,7 @@ class Chess
     end
     @white = white
 
-    @ai = AI.new(ai.skill_level, ai_white: !@human_white, resume_moves: remaining)
+    @ai = AI.new(ai.skill_level, ai_white: !@human_white, resume_moves: remaining, opponent: @opponent)
     @error_count = 0
     @last_error = ""
     save_progress
@@ -218,7 +225,7 @@ class Chess
     @white = white
 
     applied = @board.moves.map { |m| m.split(": ", 2).last }
-    @ai = AI.new(ai.skill_level, ai_white: !@human_white, resume_moves: applied)
+    @ai = AI.new(ai.skill_level, ai_white: !@human_white, resume_moves: applied, opponent: @opponent)
     @error_count = 0
     @last_error = ""
     save_progress
@@ -247,6 +254,7 @@ class Chess
     saved.moves = board.moves.map { |m| m.split(": ", 2).last }
     saved.skill_level = ai.skill_level.to_s
     saved.human_white = @human_white
+    saved.opponent_name = @opponent.try(&.name)
     saved.saved_at = Time.local.to_s("%Y-%m-%d %H:%M:%S")
     saved.save
   end

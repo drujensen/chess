@@ -51,7 +51,7 @@ enum SkillLevel
 
   # Prompts for and returns a skill level, defaulting to Advanced on blank or
   # unrecognized input - shared by Chess#select_skill_level (a new game) and
-  # Replay#start_new_game_from_here (jumping into live play from a replayed
+  # Replay#fork_new_game_from_here (jumping into live play from a replayed
   # position), since both need the exact same prompt/parse.
   def self.prompt : SkillLevel
     puts "Select opponent skill level:"
