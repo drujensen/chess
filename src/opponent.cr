@@ -25,14 +25,38 @@ class Opponent
   def initialize(@name : String, @model : String, @provider : String? = nil, @base_url : String? = nil, @api_key_env : String? = nil)
   end
 
+  # A cheap roster: every entry is at or under roughly $0.20 per million tokens
+  # blended across this app's heavily input-weighted traffic (it re-sends
+  # history on every turn). Each was verified to complete a real turn here, tool
+  # calls included; Claude Haiku 5.5, GPT-6 Luna, Gemma 4, DeepSeek Chat and
+  # Mistral Small additionally find a mate-in-one when handed Stockfish's
+  # ranking. gpt-6-luna was tested through the opencode route, since this
+  # account's OpenAI credits are exhausted - same model and same price either
+  # way, so it is listed under both providers.
+  #
+  # Deliberately excluded: anything above that band. Mistral Large ($0.59) and
+  # Gemini 2.5 Flash ($0.50) were dropped not just for costing ~3x but because
+  # they were dominated - Claude Haiku 5.5 is cheaper, faster, and plays just as
+  # well once the engine ranking is attached. Also gone are entries retired
+  # upstream (gemini-2.5-pro now 404s, grok-4 isn't in xAI's catalog) and the
+  # xAI models, whose cheapest (Grok Build 0.1, ~$1.09) sits above the band.
+  #
+  # The free local Ollama stays first because #prompt falls back to list.first
+  # on blank/unrecognized input, and a local model is the safest thing to
+  # default a player into.
   DEFAULTS = [
     Opponent.new("Ollama - Qwen3 8B (local)", "qwen3.8:latest", provider: "ollama"),
-    Opponent.new("OpenAI - GPT-5.1", "gpt-5.1", provider: "openai"),
-    Opponent.new("xAI - Grok 4", "grok-4", provider: "xai"),
+    Opponent.new("Google - Gemma 4 31B (free, slow)", "gemma-4-31b-it", provider: "gemini"),
+    Opponent.new("Anthropic - Claude Haiku 5.5", "claude-haiku-5-5", provider: "anthropic"),
+    Opponent.new("OpenAI - GPT-6 Luna", "gpt-6-luna", provider: "openai"),
     Opponent.new("DeepSeek - DeepSeek Chat", "deepseek-chat", provider: "deepseek"),
-    Opponent.new("Groq - Llama 3.3 70B", "llama-3.3-70b-versatile", provider: "groq"),
-    Opponent.new("Mistral - Mistral Large", "mistral-large-latest", provider: "mistral"),
-    Opponent.new("Gemini - Gemini 2.5 Pro", "gemini-2.5-pro", provider: "gemini"),
+    # The same gpt-6-luna as above, through the opencode gateway: identical
+    # per-token price, and the route that works when an OpenAI key has no
+    # credits left.
+    Opponent.new("OpenCode - GPT-6 Luna", "gpt-6-luna", provider: "opencode"),
+    Opponent.new("OpenCode - Claude Haiku 5.5", "claude-haiku-5-5", provider: "opencode"),
+    Opponent.new("Mistral - Mistral Small", "mistral-small-latest", provider: "mistral"),
+    Opponent.new("OpenCode - Qwen3.8 Flash", "qwen3.8-flash", provider: "opencode"),
   ]
 
   def self.path : Path
