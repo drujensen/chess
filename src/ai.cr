@@ -8,6 +8,8 @@ require "./setup_requested.cr"
 require "./move_requested.cr"
 require "./board.cr"
 require "./game_log.cr"
+require "./hint.cr"
+require "./context.cr"
 require "./opponent.cr"
 
 class AI
@@ -16,6 +18,8 @@ class AI
   getter model : String
   getter base_url : String
   @api_key : String?
+  @think : Bool
+  @send_temperature : Bool
 
   # CHESS_PROVIDER picks one of these so switching providers is one env var
   # instead of re-exporting CHESS_BASE_URL/CHESS_API_KEY by hand each time -
@@ -27,9 +31,13 @@ class AI
     "openai"     => {base_url: "https://api.openai.com/v1", key_env: "OPENAI_API_KEY"},
     "xai"        => {base_url: "https://api.x.ai/v1", key_env: "XAI_API_KEY"},
     "deepseek"   => {base_url: "https://api.deepseek.com/v1", key_env: "DEEPSEEK_API_KEY"},
-    "groq"       => {base_url: "https://api.groq.com/openai/v1", key_env: "GROQ_API_KEY"},
+    # Note the /inference/openai prefix - https://opencode.ai/v1 serves the
+    # website, not the API, so a bare /v1 here returns HTML instead of JSON.
+    "opencode"   => {base_url: "https://opencode.ai/inference/openai/v1", key_env: "OPENCODE_API_KEY"},
     "mistral"    => {base_url: "https://api.mistral.ai/v1", key_env: "MISTRAL_API_KEY"},
-    "together"   => {base_url: "https://api.together.xyz/v1", key_env: "TOGETHER_API_KEY"},
+    # OpenAI-compatible surface, not the native /v1/messages API - so the
+    # existing tool-calling code works against it unchanged.
+    "anthropic"  => {base_url: "https://api.anthropic.com/v1", key_env: "ANTHROPIC_API_KEY"},
     "fireworks"  => {base_url: "https://api.fireworks.ai/inference/v1", key_env: "FIREWORKS_API_KEY"},
     "openrouter" => {base_url: "https://openrouter.ai/api/v1", key_env: "OPENROUTER_API_KEY"},
     "gemini"     => {base_url: "https://generativelanguage.googleapis.com/v1beta/openai", key_env: "GEMINI_API_KEY"},
@@ -77,7 +85,7 @@ class AI
     @client = HTTP::Client.new(@base_uri)
     @client.connect_timeout = CONNECT_TIMEOUT
     @client.read_timeout = TIMEOUT
-    @messages = [] of NamedTuple(role: String, content: String) | NamedTuple(tool_call_id: String, role: String, name: String, content: String) | JSON::Any
+    @messages = [] of Context::Message
 
     # Best-effort hint to a local Ollama server to turn on a reasoning model's
     # extended-thinking mode (e.g. qwen3's `think` request field) before
@@ -88,12 +96,21 @@ class AI
     # real OpenAI API) reject unrecognized request parameters outright.
     @think = @api_key.nil? && @base_uri.host.in?({"localhost", "127.0.0.1"})
 
+    # Anthropic rejects `temperature` outright on its current models ("`temperature`
+    # is deprecated for this model", HTTP 400), so any Claude option would fail
+    # every request while the app kept sending it. Detected by host rather than
+    # provider name, so it also covers an opencode/gateway URL that happens to
+    # serve a Claude model through an Anthropic-shaped endpoint, and is skipped
+    # for OpenAI-compatible surfaces that accept the field. Omitting it lets the
+    # model use its own default, which is the only option that works at all here.
+    @send_temperature = @base_uri.host != "api.anthropic.com"
+
     human_color = @ai_white ? "black" : "white"
     ai_color = @ai_white ? "white" : "black"
     @messages.push(
       {
         role:    "system",
-        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is #{human_color} and you are #{ai_color}. There are 4 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. move: play the next move. resign: give up the game - but this is only even allowed once you have nothing left but pawns (and your king); it's rejected otherwise, no matter how far behind you are. Even once you're down to just pawns, only actually call it for a forced checkmate you can see coming with no defense, or a hopeless pawn ending with no realistic chance to draw or swindle something - a single piece (bishop, knight, rook, or queen) still on the board, of either color, is always a reason to keep playing it out. You have about #{TIMEOUT.total_seconds.to_i} seconds to reply each time you're asked something, which is enough time to actually calculate - before calling move, work out concretely whether your candidate hangs a piece, allows a tactic, or ignores a threat from the opponent's last move, and check your opponent's best reply to it. Play at the real strength of a #{skill_level.to_s.downcase}, #{skill_level.elo_range} Elo - that means genuinely calculating, not just pattern-matching the first reasonable-looking move.",
+        content: "You are a #{skill_level.to_s.downcase} chess player, rated approximately #{skill_level.elo_range} Elo. You are playing a game of chess against a human. the human is #{human_color} and you are #{ai_color}. There are 5 functions available to you. moves: list of moves played so far. board: the current board position as FEN, call this whenever you need to see where the pieces actually are before choosing a move. hint: ask the local Stockfish engine for its top 5 moves in the current position, with scores and the lines it expects - call it whenever you want a second opinion before committing to a move. move: play the next move. resign: give up the game - but this is only even allowed once you have nothing left but pawns (and your king); it's rejected otherwise, no matter how far behind you are. Even once you're down to just pawns, only actually call it for a forced checkmate you can see coming with no defense, or a hopeless pawn ending with no realistic chance to draw or swindle something - a single piece (bishop, knight, rook, or queen) still on the board, of either color, is always a reason to keep playing it out. You have about #{TIMEOUT.total_seconds.to_i} seconds to reply each time you're asked something, which is enough time to actually calculate - before calling move, work out concretely whether your candidate hangs a piece, allows a tactic, or ignores a threat from the opponent's last move, and check your opponent's best reply to it. Play at the real strength of a #{skill_level.to_s.downcase}, #{skill_level.elo_range} Elo - that means genuinely calculating, not just pattern-matching the first reasonable-looking move. A hint is an aid, never an order: you don't have to play its top move, and you're responsible for whatever you do play.",
       }
     )
 
@@ -123,11 +140,14 @@ class AI
   # that off by naming the actual situation explicitly.
   def chat(board : Board, text : String) : String
     @messages.push({role: "user", content: text})
-    @messages.push({
+    # Not pushed into @messages: this only makes sense about the one instruction
+    # that failed to resolve right now, and persisting it left the model
+    # believing later, genuine messages were also failed moves.
+    reminder = [{
       role:    "system",
       content: "That didn't automatically resolve to one of the human's current legal moves, so it's reaching you as a chat message instead. If it looks like they meant to make a move, tell them it wasn't recognized (use the board/moves tools if you need to check the position) so they can try again with clearer notation - never say or imply that a move was played unless you actually call play_for_human. If it's a genuine question or comment instead, just answer it normally.",
-    })
-    chat_loop(board)
+    }] of Context::Message
+    chat_loop(board, reminder)
   end
 
   # Records a natural-language instruction that got resolved into an actual
@@ -167,21 +187,44 @@ class AI
       },
       {role: "user", content: prompt},
     ]
-    body = {model: @model, temperature: 0.3, messages: messages}.to_json
+    body = chat_body(messages)
 
     result = post_chat_completion(body)
     choices = result["choices"]
     choices[choices.size - 1]["message"]["content"].to_s
   end
 
-  private def chat_loop(board : Board) : String
-    body = {
-      model:       @model,
-      temperature: 0.3,
-      messages:    @messages,
-      tools:       [moves_tool, board_tool, undo_tool, setup_position_tool, play_for_human_tool],
-      tool_choice: "auto",
-    }.to_json
+  # One place that assembles a chat-completions request body, because the two
+  # optional fields both depend on the endpoint rather than the caller:
+  # `temperature` must be omitted entirely for Anthropic (see @send_temperature),
+  # and `think` is only ever meant for a local Ollama server (see @think).
+  # Left to per-call-site literals, that's four combinations duplicated across
+  # five call sites, and a body that silently differs between them is exactly
+  # the kind of thing that only shows up as a 400 mid-game.
+  private def chat_body(messages, tools = nil, think = false, temperature = 0.3) : String
+    JSON.build do |json|
+      json.object do
+        json.field "model", @model
+        json.field("temperature", temperature) if @send_temperature
+        json.field("think", true) if think
+        json.field "messages" do
+          messages.to_json(json)
+        end
+        if (t = tools)
+          json.field "tools" do
+            t.to_json(json)
+          end
+          json.field "tool_choice", "auto"
+        end
+      end
+    end
+  end
+
+  private def chat_loop(board : Board, notices : Array(Context::Message)) : String
+    body = chat_body(
+      request_messages(board, notices),
+      [moves_tool, board_tool, undo_tool, setup_position_tool, play_for_human_tool, hint_tool("the human's side")],
+    )
 
     result = post_chat_completion(body)
     choices = result["choices"]
@@ -229,6 +272,10 @@ class AI
         else
           raise SetupRequested.new(moves)
         end
+      when "hint"
+        content = hint_response(board, !@ai_white)
+        GameLog.info("chat: hint called for the human (#{!@ai_white ? "white" : "black"}):\n#{content}")
+        @messages.push({tool_call_id: tool_id, role: "tool", name: "hint", content: content})
       when "board"
         fen = board.to_fen(!@ai_white)
         GameLog.info("chat: board called: #{fen}")
@@ -248,11 +295,11 @@ class AI
       else
         name = tool["function"]["name"].to_s
         GameLog.error("chat: unknown tool called: #{name}")
-        @messages.push({tool_call_id: tool_id, role: "tool", name: name, content: "error: \"#{name}\" isn't available right now - choose one of moves, board, undo, setup_position, or play_for_human."})
+        @messages.push({tool_call_id: tool_id, role: "tool", name: name, content: "error: \"#{name}\" isn't available right now - choose one of moves, board, hint, undo, setup_position, or play_for_human."})
       end
     end
 
-    chat_loop(board)
+    chat_loop(board, notices)
   end
 
   # Replays `moves` on a throwaway Board (the live `board` passed to `chat`
@@ -277,50 +324,124 @@ class AI
     nil
   end
 
+  # Everything the model needs to know about the *current* position that isn't
+  # already implied by the move list. These are deliberately NOT pushed into
+  # @messages: they describe one specific turn, and persisting them is exactly
+  # how the log ends up holding a dozen contradictory "current" positions. They
+  # ride along on the request that they're about, and are gone after it.
+  private def turn_notices(board : Board, error : String?, weak_move : Bool) : Array(Context::Message)
+    notices = [] of Context::Message
+    legal = board.legal_moves(@ai_white)
+
+    if board.in_check?(@ai_white)
+      notices << {
+        role:    "system",
+        content: "You are in check! You must play a move that gets your king out of check - capture the checking piece, block it, or move the king.",
+      }
+    end
+
+    if legal.size == 1
+      notices << {
+        role:    "system",
+        content: "You have exactly one legal move available right now: #{legal.first}. There is no other option - you must play this exact move.",
+      }
+    end
+
+    unless error.nil? || error.empty?
+      notices << {
+        role:    "system",
+        content: "error: #{error} Your legal moves right now are: #{legal.join(", ")}. Pick one of these exactly.",
+      }
+    end
+
+    if weak_move
+      notices << {
+        role:    "system",
+        content: "For this move only: play like a genuine #{skill_level.to_s.downcase}. Don't calculate deeply and don't rely on any engine suggestion - play a simple, natural-looking move, and it's fine to miss a tactic or overlook a threat. Legal moves right now: #{legal.join(", ")}.",
+      }
+    elsif legal.size > 1
+      # Attached rather than offered as a tool the model must think to call:
+      # DeepSeek was given the `hint` tool on every move of a real game and used
+      # it zero times, so an opt-in aid is no aid at all for a model that
+      # doesn't reach for one. Still a suggestion, not an order - the
+      # disclaimer in Hint.render_for_ai keeps it that way. Skipped when there's
+      # only one legal move, since paying for a search to confirm the obvious
+      # is pointless, and on a weak-move turn, where the tier is the point.
+      if (suggestions = Hint.suggestions(board, @ai_white)) && !suggestions.empty?
+        notices << {
+          role:    "system",
+          content: "Stockfish's assessment of the current position, ranked best-first. Unless you can see a concrete reason the top pick is wrong, prefer one of these over pattern-matching your first instinct - though you remain free to play any legal move.\n#{Hint.render_for_ai(suggestions, @ai_white)}\n(This is valid for this move only; it will not be repeated for your opponent's next turn.)",
+        }
+      end
+    end
+
+    notices
+  end
+
+  # Stands in for the turns #trim elided: the move list and the current
+  # position, which together say everything a dropped FEN or engine ranking
+  # would have - only truthfully, since this one is the position that's
+  # actually on the board now.
+  # The side to move is *derived* from the move list rather than assumed, so it
+  # stays correct in every case - an AI's own turn (its color, whenever it's
+  # actually its move), chat during the human's turn, and - the case a
+  # hardcoded color silently gets wrong - setup_position/undo handing the next
+  # move to whoever the position says it belongs to.
+  private def context_summary(board : Board) : Context::Message
+    white_to_move = board.moves.size.even?
+    {
+      role:    "system",
+      content: "Earlier turns of this game have been compacted out of this conversation. Here is everything that carries forward:\nMoves so far: #{board.moves.join(", ")}\nCurrent position (FEN): #{board.to_fen(white_to_move)}\nTrust this position over any earlier one you remember seeing - the older ones are no longer accurate.",
+    }
+  end
+
+  # The full message list for one request: trimmed history + the current turn's
+  # notices, always appended at the very end so the model sees them last (most
+  # recent = highest attention for most models) and so trimming can never
+  # accidentally drop them.
+  private def request_messages(board : Board, notices : Array(Context::Message)) : Array(Context::Message)
+    eliding = Context.eliding?(@messages)
+    trimmed = Context.trim(@messages, summary: eliding ? context_summary(board) : nil)
+    trimmed.concat(notices)
+    trimmed = wire_safe(trimmed)
+    GameLog.info("context: #{eliding ? "trimmed #{@messages.size} -> #{trimmed.size}" : "untrimmed #{trimmed.size}"} messages + #{notices.size} notice(s)")
+    trimmed
+  end
+
+  # Anthropic's OpenAI-compatible endpoint rejects tool messages that carry a
+  # `name` ("cannot preserve named conversation participants", HTTP 400) - and
+  # since every tool response in this app has one, any Claude model would work
+  # for its first request and then fail the moment a tool is actually called.
+  # The field is optional in the OpenAI tool-message schema and nothing here
+  # ever reads it back, so it's simply dropped on the way out rather than
+  # stripped from all thirteen push sites - which keeps the local log readable
+  # while sending what every provider accepts.
+  private def wire_safe(messages : Array(Context::Message)) : Array(Context::Message)
+    messages.map do |message|
+      if tool = message.as?(Context::Tool)
+        {tool_call_id: tool[:tool_call_id], role: "tool", content: tool[:content]}
+      else
+        message
+      end
+    end
+  end
+
   def next_move(board : Board, error : String? = nil) : String
     opening_prompt = board.moves.empty? ? "You are playing white and move first. Make your opening move." : "I played #{board.moves.last}.  your turn."
     @messages.push({role: "user", content: opening_prompt})
 
-    legal = board.legal_moves(@ai_white)
-
-    if board.in_check?(@ai_white)
-      @messages.push({
-        role:    "system",
-        content: "You are in check! You must play a move that gets your king out of check - capture the checking piece, block it, or move the king.",
-      })
-    end
-
-    if legal.size == 1
-      @messages.push({
-        role:    "system",
-        content: "You have exactly one legal move available right now: #{legal.first}. There is no other option - you must play this exact move.",
-      })
-    end
-
-    unless error.nil? || error.empty?
-      @messages.push({
-        role:    "system",
-        content: "error: #{error} Your legal moves right now are: #{legal.join(", ")}. Pick one of these exactly.",
-      })
-    end
-
-    if rand < skill_level.weak_move_chance
-      @messages.push({
-        role:    "system",
-        content: "For this move only: play like a genuine #{skill_level.to_s.downcase}. Don't calculate deeply - play a simple, natural-looking move rather than searching for your objectively strongest option, and it's fine to miss a tactic or overlook a threat. Legal moves right now: #{board.legal_moves(@ai_white).join(", ")}.",
-      })
-    end
-
-    next_move_loop(board)
+    next_move_loop(board, turn_notices(board, error, rand < skill_level.weak_move_chance))
   end
 
-  private def next_move_loop(board : Board) : String
+  private def next_move_loop(board : Board, notices : Array(Context::Message)) : String
+    # The `hint` tool is deliberately not offered here: its answer is already
+    # attached to every request as a notice (see #turn_notices), so a tool for
+    # fetching the same thing again would only ever return what the model was
+    # just handed.
     tools = [moves_tool, board_tool, move_tool, resign_tool]
-    body = if @think
-             {model: @model, temperature: 0.3, messages: @messages, tools: tools, tool_choice: "auto", think: true}.to_json
-           else
-             {model: @model, temperature: 0.3, messages: @messages, tools: tools, tool_choice: "auto"}.to_json
-           end
+    names = tools.map { |t| t[:function][:name] }.join(", ")
+    GameLog.info("next_move: tools offered: #{names}")
+    body = chat_body(request_messages(board, notices), tools, @think)
 
     result = post_chat_completion(body)
 
@@ -338,7 +459,7 @@ class AI
 
     if tool_calls.nil?
       GameLog.info("next_move: replied without a tool call: #{message["content"]}")
-      return next_move_loop(board)
+      return next_move_loop(board, notices)
     end
 
     @messages.push(message)
@@ -416,7 +537,7 @@ class AI
       end
     end
 
-    requested_move || next_move_loop(board)
+    requested_move || next_move_loop(board, notices)
   end
 
   private def moves_tool
@@ -484,6 +605,37 @@ class AI
         },
       },
     }
+  end
+
+  private def hint_tool(about : String)
+    {
+      type:     "function",
+      function: {
+        name:        "hint",
+        description: "Get the top 5 moves for #{about} in the current position, ranked by the local Stockfish engine, each with its score and the line the engine expects to follow. Optional - call it whenever you want a second opinion before deciding. The list is a suggestion, not an instruction: you stay free to play any legal move you like, including one not on it.",
+        parameters:  {
+          type:       "object",
+          properties: {} of String => String,
+        },
+      },
+    }
+  end
+
+  # The engine's ranked list for `white`, as a tool response - always an
+  # answer, never an error, so the model's turn simply continues (same shape
+  # as board/moves). A nil from Hint.suggestions means no usable engine, and an
+  # empty list means the side to move genuinely has no legal move at all; those
+  # are different facts and the model needs to be told which one it got.
+  private def hint_response(board : Board, white : Bool) : String
+    if (suggestions = Hint.suggestions(board, white))
+      if suggestions.empty?
+        "#{white ? "white" : "black"} has no legal moves in this position at all - it's checkmate or stalemate, so there's nothing left to hint."
+      else
+        Hint.render_for_ai(suggestions, white)
+      end
+    else
+      "unavailable: the local Stockfish engine isn't installed or didn't answer. Pick your own move from the position instead - call board if you need to see it again."
+    end
   end
 
   private def play_for_human_tool
@@ -558,41 +710,36 @@ class AI
         content: "FEN: #{board.to_fen(white)}\nLegal moves: #{legal.join(", ")}\nInstruction: #{text}",
       },
     ]
-    body = {
-      model:       @model,
-      temperature: 0.2,
-      messages:    messages,
-      tools:       [
-        {
-          type:     "function",
-          function: {
-            name:        "propose_move",
-            description: "propose the resolved move",
-            parameters:  {
-              type:       "object",
-              properties: {
-                move: {
-                  type:        "string",
-                  description: "one of the given legal moves, in long algebraic notation i.e. e2e4",
-                },
+    resolve_tools = [
+      {
+        type:     "function",
+        function: {
+          name:        "propose_move",
+          description: "propose the resolved move",
+          parameters:  {
+            type:       "object",
+            properties: {
+              move: {
+                type:        "string",
+                description: "one of the given legal moves, in long algebraic notation i.e. e2e4",
               },
             },
           },
         },
-        {
-          type:     "function",
-          function: {
-            name:        "not_a_move",
-            description: "the instruction does not clearly identify a single legal move",
-            parameters:  {
-              type:       "object",
-              properties: {} of String => String,
-            },
+      },
+      {
+        type:     "function",
+        function: {
+          name:        "not_a_move",
+          description: "the instruction does not clearly identify a single legal move",
+          parameters:  {
+            type:       "object",
+            properties: {} of String => String,
           },
         },
-      ],
-      tool_choice: "auto",
-    }.to_json
+      },
+    ]
+    body = chat_body(messages, resolve_tools, temperature: 0.2)
 
     result = post_chat_completion(body)
     choices = result["choices"]
