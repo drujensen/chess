@@ -28,10 +28,10 @@ export CHESS_TIMEOUT=300 # seconds per request before giving up (default 300)
 ```
 
 Or, for a provider already listed in `AI::PROVIDERS` (`openai`, `xai`,
-`deepseek`, `groq`, `mistral`, `together`, `fireworks`, `openrouter`,
-`gemini`, `ollama`, `drujensen`), just set `CHESS_PROVIDER` instead - it
-looks up the base URL and that provider's own API key env var (e.g.
-`XAI_API_KEY`) automatically:
+`deepseek`, `opencode`, `mistral`, `anthropic`, `fireworks`, `openrouter`,
+`gemini`, `ollama`, `drujensen`), just set `CHESS_PROVIDER` instead - it looks
+up the base URL and that provider's own API key env var (e.g. `XAI_API_KEY`)
+automatically:
 ```
 export CHESS_PROVIDER=xai
 export CHESS_MODEL=grok-4-fast
@@ -71,6 +71,16 @@ You'll get a menu to start a new game or browse/replay your saved games.
 To move, use long algebraic notation.
 For example, to move the pawn: `e2e4`
 To move the knight: `g1f3`
+
+Type `hint` on your turn instead of a move to get the top five moves for your
+side, ranked by [Stockfish](https://stockfishchess.org/) with a score and the
+line the engine expects. It's a suggestion only: nothing is played, the turn is
+still yours afterward, and you're free to ignore the whole list. The engine is
+optional - without `stockfish` on your PATH, `hint` says so in one line and the
+game carries on. The AI gets the same list as its own `hint` tool and may
+consult it before choosing a move (it's never required to play the engine's top
+choice - that's what makes it a hint for the model too, rather than the model
+turning into Stockfish).
 
 Type `quit` (or `exit`/`save`) on your turn to stop and pick the game back
 up later - or just close the terminal or hit Ctrl+C, since progress is
@@ -119,7 +129,7 @@ List of things to contribute:
 - [x] Save finished games to disk (PGN) and let players browse/replay past games
 - [x] Save an in-progress game after every move and let players resume it later
 - [x] Post-game analysis mode (Stockfish reviews the finished game for blunders/mistakes, shown while browsing saved games - optional, needs `stockfish` installed)
-- [ ] Hint mode - ask the AI for a suggested move without committing to it
+- [x] Hint mode - ask the AI for a suggested move without committing to it
 - [ ] Undo/redo a move
 - [x] Make the model/endpoint configurable via env vars instead of hardcoded constants
 - [x] Let the human choose white, black, or random at the start of a new game
