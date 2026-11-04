@@ -8,6 +8,7 @@ require "./undo_requested.cr"
 require "./setup_requested.cr"
 require "./move_requested.cr"
 require "./game_log.cr"
+require "./hint.cr"
 require "./replay.cr"
 require "./saved_game.cr"
 
@@ -107,6 +108,11 @@ class Chess
 
       if move && (undo_match = move.downcase.match(/^undo(?:\s+(\d+))?$/))
         undo((undo_match[1]? || "1").to_i)
+        return
+      end
+
+      if move && move.downcase == "hint"
+        show_hint
         return
       end
     else
@@ -231,6 +237,36 @@ class Chess
     save_progress
 
     puts "position set up - #{applied.size} move#{applied.size == 1 ? "" : "s"} in. #{@white ? "white" : "black"}'s turn."
+  end
+
+  # Asks the local Stockfish for the top five moves for whichever color the
+  # human is playing and prints them - a suggestion only. Nothing here plays a
+  # move, touches the board, or consumes the turn, so the human is free to
+  # ignore the hint entirely (or ask again) and the game is exactly as it was
+  # afterward; that also means there's nothing to save and no reason to reset
+  # the invalid-move counter. Deliberately not recorded into the AI's message
+  # history either: the model's account of the game only ever covers what
+  # actually happened on the board, and a hint changed nothing.
+  private def show_hint
+    unless Hint.available?
+      puts "no hint available - stockfish isn't installed (dnf/apt/brew install stockfish puts it on PATH)."
+      return
+    end
+
+    puts "consulting stockfish..."
+    if (suggestions = Hint.suggestions(board, @human_white))
+      if suggestions.empty?
+        puts "no hint available - #{human_side} has no legal moves right now."
+      else
+        puts Hint.render_for_human(suggestions)
+      end
+    else
+      puts "couldn't get a hint from stockfish just now - see #{GameLog.path} for details."
+    end
+  end
+
+  private def human_side : String
+    @human_white ? "white" : "black"
   end
 
   private def report_game_status(white : Bool)
