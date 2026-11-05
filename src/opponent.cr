@@ -25,21 +25,33 @@ class Opponent
   def initialize(@name : String, @model : String, @provider : String? = nil, @base_url : String? = nil, @api_key_env : String? = nil)
   end
 
-  # A cheap roster: every entry is at or under roughly $0.20 per million tokens
-  # blended across this app's heavily input-weighted traffic (it re-sends
-  # history on every turn). Each was verified to complete a real turn here, tool
-  # calls included; Claude Haiku 5.5, GPT-6 Luna, Gemma 4, DeepSeek V4 Flash and
-  # Mistral Small additionally find a mate-in-one when handed Stockfish's
-  # ranking. gpt-6-luna was tested through the opencode route, since this
-  # account's OpenAI credits are exhausted - same model and same price either
-  # way, so it is listed under both providers.
+  # A cheap roster, ordered free-first: the two zero-cost options (local Ollama,
+  # Google's free Gemma tier) lead, then the paid models by price, with the
+  # opencode gateway entries grouped together at the end. Prices are blended
+  # per million tokens across roughly 10:1 input:output, which is this app's
+  # shape - it re-sends the running conversation on every turn, so input cost
+  # dominates and a model's headline output price undersells what it actually
+  # costs to play a game with.
   #
-  # Deliberately excluded: anything above that band. Mistral Large ($0.59) and
-  # Gemini 2.5 Flash ($0.50) were dropped not just for costing ~3x but because
-  # they were dominated - Claude Haiku 5.5 is cheaper, faster, and plays just as
-  # well once the engine ranking is attached. Also gone are entries retired
-  # upstream (gemini-2.5-pro now 404s, grok-4 isn't in xAI's catalog) and the
-  # xAI models, whose cheapest (Grok Build 0.1, ~$1.09) sits above the band.
+  # Everything except Grok Build 0.1 sits at or under ~$0.20 blended. Grok is
+  # xAI's cheapest tool-calling model (~$1.09) and is here because it was asked
+  # for, not because it competes on price - and note it could NOT be verified:
+  # this account's xAI credits are exhausted, so unlike every other entry below
+  # nobody has seen it complete a turn here.
+  #
+  # The rest were verified to complete a real turn, tool calls included; Claude
+  # Haiku 5.5, GPT-6 Luna, Gemma 4, DeepSeek V4 Flash and Mistral Small
+  # additionally find a mate-in-one when handed Stockfish's ranking. gpt-6-luna
+  # was tested through the opencode route, since this account's OpenAI credits
+  # are exhausted - same model and same price either way, so it is listed under
+  # both providers.
+  #
+  # Deliberately excluded: Mistral Large ($0.59) and Gemini 2.5 Flash ($0.50) -
+  # ~3x the cost of Claude Haiku 5.5 for no measurable gain in play, since the
+  # engine ranking attached to every turn does the heavy lifting either way.
+  # Also gone: entries retired upstream (gemini-2.5-pro now 404s, grok-4 isn't
+  # in xAI's catalog), and gemini-2.5-flash-lite, which is cheaper than
+  # anything here but answered a black turn with white's move.
   #
   # The free local Ollama stays first because #prompt falls back to list.first
   # on blank/unrecognized input, and a local model is the safest thing to
@@ -49,17 +61,18 @@ class Opponent
     Opponent.new("Google - Gemma 4 31B (free, slow)", "gemma-4-31b-it", provider: "gemini"),
     Opponent.new("Anthropic - Claude Haiku 5.5", "claude-haiku-5-5", provider: "anthropic"),
     Opponent.new("OpenAI - GPT-6 Luna", "gpt-6-luna", provider: "openai"),
-    # Was "deepseek-chat", a legacy alias that DeepSeek's API still answers but
-    # no longer lists in /models - it silently serves the same deepseek-flash
-    # either way, so this rename makes the label honest rather than upgrading
+    # Was listed as "deepseek-chat", a legacy alias DeepSeek still answers but
+    # no longer lists in /models; it silently serves the same deepseek-flash
+    # either way, so this rename made the label honest rather than upgrading
     # the model.
     Opponent.new("DeepSeek - DeepSeek V4 Flash", "deepseek-v4-flash", provider: "deepseek"),
-    # The same gpt-6-luna as above, through the opencode gateway: identical
-    # per-token price, and the route that works when an OpenAI key has no
-    # credits left.
+    Opponent.new("Mistral - Mistral Small", "mistral-small-latest", provider: "mistral"),
+    # xAI's cheapest tool-calling model, and its coding-tuned one.
+    Opponent.new("xAI - Grok Build 0.1", "grok-build-0.1", provider: "xai"),
+    # The opencode gateway: same per-token prices as going direct, and the
+    # route that works when a provider key has no credits left.
     Opponent.new("OpenCode - GPT-6 Luna", "gpt-6-luna", provider: "opencode"),
     Opponent.new("OpenCode - Claude Haiku 5.5", "claude-haiku-5-5", provider: "opencode"),
-    Opponent.new("Mistral - Mistral Small", "mistral-small-latest", provider: "mistral"),
     Opponent.new("OpenCode - Qwen3.8 Flash", "qwen3.8-flash", provider: "opencode"),
   ]
 
