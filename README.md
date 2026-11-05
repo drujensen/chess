@@ -53,17 +53,29 @@ Linux:
 curl -fsSL https://crystal-lang.org/install.sh | sudo bash
 ```
 
-## Build
+## Build and install
 
-There are no dependencies to install. Just build the app:
+There are no dependencies to install. Build the app in the repository with:
 ```
 shards build
 ```
 
+To install it for your user (no `sudo` required):
+```
+make install
+```
+
+This builds the app and copies it to `~/.local/bin/chess`. Make sure
+`~/.local/bin` is on your `PATH`; if it isn't, add this to your shell profile:
+```
+export PATH="$HOME/.local/bin:$PATH"
+```
+You can override the install location with `make install PREFIX=/some/path`.
+
 ## Usage
 
 ```
-./bin/chess
+chess
 ```
 
 You'll get a menu to start a new game or browse/replay your saved games.
