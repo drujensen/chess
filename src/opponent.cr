@@ -40,7 +40,7 @@ class Opponent
   # nobody has seen it complete a turn here.
   #
   # The rest were verified to complete a real turn, tool calls included; Claude
-  # Haiku 5.5, GPT-6 Luna, Gemma 4, DeepSeek V4 Flash and Mistral Small
+  # Haiku 5.5, GPT-6 Luna, Gemma 4, DeepSeek Flash and Mistral Small
   # additionally find a mate-in-one when handed Stockfish's ranking. gpt-6-luna
   # was tested through the opencode route, since this account's OpenAI credits
   # are exhausted - same model and same price either way, so it is listed under
@@ -61,16 +61,23 @@ class Opponent
     Opponent.new("Google - Gemma 4 31B (free, slow)", "gemma-4-31b-it", provider: "gemini"),
     Opponent.new("Anthropic - Claude Haiku 5.5", "claude-haiku-5-5", provider: "anthropic"),
     Opponent.new("OpenAI - GPT-6 Luna", "gpt-6-luna", provider: "openai"),
-    # Was listed as "deepseek-chat", a legacy alias DeepSeek still answers but
-    # no longer lists in /models; it silently serves the same deepseek-flash
-    # either way, so this rename made the label honest rather than upgrading
-    # the model.
-    Opponent.new("DeepSeek - DeepSeek V4 Flash", "deepseek-v4-flash", provider: "deepseek"),
+    # Both "deepseek-chat" (the original entry) and "deepseek-v4-flash" turned
+    # out to be aliases - the first isn't listed in DeepSeek's /models anymore,
+    # the second is marked deprecated in models.dev - and all three names
+    # resolve to the same weights. deepseek-flash is the id DeepSeek actually
+    # lists today, so the label now matches what plays.
+    Opponent.new("DeepSeek - DeepSeek Flash", "deepseek-flash", provider: "deepseek"),
     Opponent.new("Mistral - Mistral Small", "mistral-small-latest", provider: "mistral"),
     # xAI's cheapest tool-calling model, and its coding-tuned one.
     Opponent.new("xAI - Grok Build 0.1", "grok-build-0.1", provider: "xai"),
-    # The opencode gateway: same per-token prices as going direct, and the
-    # route that works when a provider key has no credits left.
+    # The opencode gateway: a pass-through to upstream providers, not its own
+    # hosting. For the two models listed below that are also available direct
+    # (gpt-6-luna, claude-haiku-5-5) its per-token price is identical to going
+    # direct, and it is the route that works when a provider key has no credits
+    # left. Do not assume that holds generally - opencode does not carry
+    # Mistral Small at all, and its deepseek-v4-flash is priced below
+    # DeepSeek's own, though that appears to be a different weights snapshot
+    # behind the same label rather than a genuine discount.
     Opponent.new("OpenCode - GPT-6 Luna", "gpt-6-luna", provider: "opencode"),
     Opponent.new("OpenCode - Claude Haiku 5.5", "claude-haiku-5-5", provider: "opencode"),
     Opponent.new("OpenCode - Qwen3.8 Flash", "qwen3.8-flash", provider: "opencode"),
