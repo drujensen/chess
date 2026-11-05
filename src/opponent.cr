@@ -28,7 +28,7 @@ class Opponent
   # A cheap roster: every entry is at or under roughly $0.20 per million tokens
   # blended across this app's heavily input-weighted traffic (it re-sends
   # history on every turn). Each was verified to complete a real turn here, tool
-  # calls included; Claude Haiku 5.5, GPT-6 Luna, Gemma 4, DeepSeek Chat and
+  # calls included; Claude Haiku 5.5, GPT-6 Luna, Gemma 4, DeepSeek V4 Flash and
   # Mistral Small additionally find a mate-in-one when handed Stockfish's
   # ranking. gpt-6-luna was tested through the opencode route, since this
   # account's OpenAI credits are exhausted - same model and same price either
@@ -49,7 +49,11 @@ class Opponent
     Opponent.new("Google - Gemma 4 31B (free, slow)", "gemma-4-31b-it", provider: "gemini"),
     Opponent.new("Anthropic - Claude Haiku 5.5", "claude-haiku-5-5", provider: "anthropic"),
     Opponent.new("OpenAI - GPT-6 Luna", "gpt-6-luna", provider: "openai"),
-    Opponent.new("DeepSeek - DeepSeek Chat", "deepseek-chat", provider: "deepseek"),
+    # Was "deepseek-chat", a legacy alias that DeepSeek's API still answers but
+    # no longer lists in /models - it silently serves the same deepseek-flash
+    # either way, so this rename makes the label honest rather than upgrading
+    # the model.
+    Opponent.new("DeepSeek - DeepSeek V4 Flash", "deepseek-v4-flash", provider: "deepseek"),
     # The same gpt-6-luna as above, through the opencode gateway: identical
     # per-token price, and the route that works when an OpenAI key has no
     # credits left.
