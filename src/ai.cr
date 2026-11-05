@@ -62,6 +62,14 @@ class AI
   CONNECT_TIMEOUT = 10.seconds
   TIMEOUT         = ENV.fetch("CHESS_TIMEOUT", "300").to_i.seconds
 
+  # GPT-6 Luna on OpenAI's Chat Completions endpoint requires reasoning_effort
+  # to be explicitly set to "none" when function tools are used. Other
+  # providers/routes have their own defaults and should not receive this
+  # OpenAI-specific parameter.
+  def self.tool_reasoning_effort(model : String, host : String?) : String?
+    "none" if host == "api.openai.com" && model == "gpt-6-luna"
+  end
+
   # resume_moves: long-algebraic moves already played (alternating white/
   # black, starting with white), when picking a previously-saved game back
   # up. The exact prior conversation can't be restored, so instead the model
@@ -194,19 +202,24 @@ class AI
     choices[choices.size - 1]["message"]["content"].to_s
   end
 
-  # One place that assembles a chat-completions request body, because the two
-  # optional fields both depend on the endpoint rather than the caller:
+  # One place that assembles a chat-completions request body, because its
+  # optional fields depend on the endpoint/model rather than the caller:
   # `temperature` must be omitted entirely for Anthropic (see @send_temperature),
-  # and `think` is only ever meant for a local Ollama server (see @think).
-  # Left to per-call-site literals, that's four combinations duplicated across
-  # five call sites, and a body that silently differs between them is exactly
-  # the kind of thing that only shows up as a 400 mid-game.
+  # `think` is only ever meant for a local Ollama server (see @think), and
+  # OpenAI's GPT-6 Luna needs `reasoning_effort: "none"` when function tools are
+  # enabled. Left to per-call-site literals, these combinations would be
+  # duplicated across the request paths, and a body that silently differs
+  # between them is exactly the kind of thing that only shows up as a 400
+  # mid-game.
   private def chat_body(messages, tools = nil, think = false, temperature = 0.3) : String
     JSON.build do |json|
       json.object do
         json.field "model", @model
         json.field("temperature", temperature) if @send_temperature
         json.field("think", true) if think
+        if tools && (effort = self.class.tool_reasoning_effort(@model, @base_uri.host))
+          json.field "reasoning_effort", effort
+        end
         json.field "messages" do
           messages.to_json(json)
         end

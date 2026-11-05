@@ -115,6 +115,11 @@ class Chess
         show_hint
         return
       end
+
+      if move && move.downcase == "switch"
+        switch_opponent
+        return
+      end
     else
       move = ai.next_move(board, last_error)
       puts move
@@ -281,6 +286,59 @@ class Chess
     elsif board.in_check?(white)
       puts "#{white ? "white" : "black"} is in check!"
     end
+  end
+
+  # Swaps which model plays the AI's side, mid-game, without touching the
+  # position. Deliberately narrower than undo/setup_position: nothing is rebuilt
+  # or replayed, because the board is already exactly where the human wants it -
+  # only the mind on the other side of it changes.
+  #
+  # The new model is briefed with the game-so-far the same way a resumed game
+  # is, since its predecessor's conversation can't be handed over - the best
+  # available substitute is the move list plus the position.
+  #
+  # Skill level is deliberately carried over rather than re-asked: it governs
+  # the weak-move nudge and is the opponent rating the human's Elo is scored
+  # against, so switching providers mid-game should change *who* is playing, not
+  # how hard. @last_error is cleared for the same reason it is on undo - a
+  # rejection the previous model got belongs to that model, and showing it to its
+  # replacement would have the new one apologising for a move it never made.
+  private def switch_opponent
+    current = "#{ai.model} @ #{ai.base_url}"
+    unless (next_opponent = Opponent.prompt_switch(current))
+      puts "keeping #{current}."
+      return
+    end
+    moves = board.moves.map { |m| m.split(": ", 2).last }
+
+    # Built as a candidate first, and only adopted once it constructs cleanly:
+    # an opponents.json entry with a provider that isn't in AI::PROVIDERS (and
+    # no explicit base_url) makes resolve_base_url raise, and letting that
+    # propagate would end the game via run's generic rescue - losing nothing
+    # already saved, but dumping the player back to the main menu for a typo in
+    # a hand-edited config. A failed switch should leave the game exactly as it
+    # was, which it does, since neither @ai nor @opponent has been touched yet.
+    candidate = begin
+      AI.new(ai.skill_level, ai_white: !@human_white, resume_moves: moves, opponent: next_opponent)
+    rescue ex
+      GameLog.error("switch_opponent: #{next_opponent.name} unusable", ex)
+      puts "couldn't switch to #{next_opponent.name} - #{ex.message}"
+      puts "still playing #{current}."
+      return
+    end
+
+    if {candidate.model, candidate.base_url} == {ai.model, ai.base_url}
+      puts "already playing #{next_opponent.name}."
+      return
+    end
+
+    @opponent = next_opponent
+    @ai = candidate
+    @error_count = 0
+    @last_error = ""
+    save_progress
+
+    puts "now playing #{next_opponent.name} (#{ai.skill_level}) - #{moves.size} move#{moves.size == 1 ? "" : "s"} briefed. #{@white ? "white" : "black"}'s turn."
   end
 
   # Persists the in-progress game after every successful move, so Ctrl+C,

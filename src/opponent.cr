@@ -112,15 +112,41 @@ class Opponent
   # "numbered list, blank/invalid defaults to the first entry" shape as
   # SkillLevel.prompt, so the two prompts feel like one flow.
   def self.prompt : Opponent
+    menu || load.first
+  end
+
+  # Mid-game variant, used by `switch`: naming the current opponent and
+  # returning nil instead of defaulting to list.first. Without that, a stray
+  # Enter at the prompt would silently swap the opponent out from under the
+  # player mid-game - harmless when starting fresh, since there's nothing to
+  # lose, but not acceptable partway through a position they care about.
+  def self.prompt_switch(current : String) : Opponent?
+    puts "Change opponent (current: #{current})"
+    menu(cancelled: true)
+  end
+
+  # `cancelled` adds the explicit 0) cancel line; without it (a new game)
+  # anything unrecognised still falls through to nil, which the caller reads
+  # as "use the default".
+  private def self.menu(cancelled : Bool = false) : Opponent?
     list = load
     puts "Select opponent:"
     list.each_with_index do |o, i|
       puts "#{i + 1}) #{o.name} (#{o.model})"
     end
+    puts "0) cancel - keep the current opponent" if cancelled
     print "> "
     drain_stdin
-    index = gets.try(&.strip.to_i?)
-    (index && index >= 1 && index <= list.size) ? list[index - 1] : list.first
+    from_selection(gets || "", list)
+  end
+
+  # The selection half of the menu, kept apart from the printing so the one
+  # distinction that actually matters mid-game can be tested directly: an
+  # unusable answer here means "no change", not "the first opponent".
+  def self.from_selection(input : String, list : Array(Opponent)) : Opponent?
+    index = input.strip.to_i?
+    return nil if index.nil? || index < 1 || index > list.size
+    list[index - 1]
   end
 
   # AI::PROVIDERS is the same provider shortcut map CHESS_PROVIDER resolves
