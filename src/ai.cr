@@ -233,6 +233,14 @@ class AI
     end
   end
 
+  private def response_tool_calls(message : JSON::Any) : Array(JSON::Any)?
+    # OpenAI-compatible providers commonly return `"tool_calls": null` when
+    # the assistant responds with plain text. A missing key is nil, but an
+    # explicit JSON null is a non-nil JSON::Any wrapping Nil, so use the
+    # optional cast rather than calling `as_a` on it.
+    message["tool_calls"]?.try(&.as_a?)
+  end
+
   private def chat_loop(board : Board, notices : Array(Context::Message)) : String
     body = chat_body(
       request_messages(board, notices),
@@ -242,7 +250,7 @@ class AI
     result = post_chat_completion(body)
     choices = result["choices"]
     message = choices[choices.size - 1]["message"]
-    tool_calls = message["tool_calls"]?
+    tool_calls = response_tool_calls(message)
 
     return message["content"].to_s if tool_calls.nil?
 
@@ -258,7 +266,7 @@ class AI
     # new position, same as a resumed game. An invalid "setup_position" does
     # get a normal tool response instead (the validation failure reason), so
     # the model can retry with a corrected sequence in the same chat turn.
-    tool_calls.as_a.each do |tool|
+    tool_calls.each do |tool|
       tool_id = tool["id"].to_s
 
       case tool["function"]["name"]
@@ -468,7 +476,7 @@ class AI
     reasoning = message["thinking"]? || message["reasoning_content"]? || message["reasoning"]?
     GameLog.info("next_move: reasoning: #{reasoning}") if reasoning
 
-    tool_calls = message["tool_calls"]?
+    tool_calls = response_tool_calls(message)
 
     if tool_calls.nil?
       GameLog.info("next_move: replied without a tool call: #{message["content"]}")
@@ -484,7 +492,7 @@ class AI
     # "resign") only one of them actually ends the turn.
     requested_move = nil
 
-    tool_calls.as_a.each do |tool|
+    tool_calls.each do |tool|
       tool_id = tool["id"].to_s
 
       case tool["function"]["name"]
@@ -757,7 +765,7 @@ class AI
     result = post_chat_completion(body)
     choices = result["choices"]
     message = choices[choices.size - 1]["message"]
-    tool_calls = message["tool_calls"]?
+    tool_calls = response_tool_calls(message)
     return nil if tool_calls.nil?
 
     tool = tool_calls[tool_calls.size - 1]
