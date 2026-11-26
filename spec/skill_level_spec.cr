@@ -4,7 +4,7 @@ describe SkillLevel do
   describe "#elo_range" do
     it "returns the expected range for each level" do
       SkillLevel::Novice.elo_range.should eq("0-500")
-      SkillLevel::Grandmaster.elo_range.should eq("2500+")
+      SkillLevel::Master.elo_range.should eq("2000-2500")
     end
   end
 
@@ -15,9 +15,8 @@ describe SkillLevel do
       SkillLevel::Intermediate.weak_move_chance.should be > SkillLevel::Advanced.weak_move_chance
     end
 
-    it "never nudges Master or Grandmaster" do
+    it "never nudges Master" do
       SkillLevel::Master.weak_move_chance.should eq(0.0)
-      SkillLevel::Grandmaster.weak_move_chance.should eq(0.0)
     end
   end
 
@@ -27,7 +26,7 @@ describe SkillLevel do
     end
 
     it "accepts a name, case-insensitively" do
-      SkillLevel.from_input("Grandmaster").should eq(SkillLevel::Grandmaster)
+      SkillLevel.from_input("Master").should eq(SkillLevel::Master)
     end
 
     it "returns nil for anything unrecognized" do
