@@ -39,6 +39,16 @@ describe Hint do
         suggestions.all? { |s| !s[:cp].nil? }.should be_true
       end
 
+      it "returns the requested count when the human asks for more hints" do
+        pending! "stockfish not installed" unless Hint.available?
+
+        # The opening position has 20 legal moves, so a count of 10 is fully
+        # satisfiable and should come back with exactly ten ranked suggestions.
+        suggestions = Hint.suggestions(hint_fixture([] of String), true, 10).not_nil!
+        suggestions.size.should eq(10)
+        suggestions.map { |s| s[:move] }.uniq.size.should eq(10)
+      end
+
       it "finds the mate-in-one in Fool's Mate position for black" do
         pending! "stockfish not installed" unless Hint.available?
 
@@ -97,6 +107,17 @@ describe Hint do
       Hint.render_for_human(suggestions).should eq(
         "1) d4  (+0.33)  then: d2d4 g8f6 c2c4\n" +
           "2) Qh4 (mate in 1)  then: d8h4"
+      )
+    end
+
+    it "shows the next six plies of the engine's line, truncating anything longer" do
+      pv = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4", "g8f6"]
+      suggestions = [
+        {move: "e2e4", san: "e4", score: "+0.44", cp: 44, mate: nil, pv: pv},
+      ] of Hint::Suggestion
+
+      Hint.render_for_human(suggestions).should eq(
+        "1) e4 (+0.44)  then: e2e4 e7e5 g1f3 b8c6 f1b5 a7a6"
       )
     end
   end

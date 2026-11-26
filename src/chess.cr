@@ -111,8 +111,8 @@ class Chess
         return
       end
 
-      if move && move.downcase == "hint"
-        show_hint
+      if move && (hint_match = move.downcase.match(/^hint(?:\s+(\d+))?$/))
+        show_hint((hint_match[1]? || Hint::MOVES).to_i)
         return
       end
 
@@ -244,7 +244,7 @@ class Chess
     puts "position set up - #{applied.size} move#{applied.size == 1 ? "" : "s"} in. #{@white ? "white" : "black"}'s turn."
   end
 
-  # Asks the local Stockfish for the top five moves for whichever color the
+  # Asks the local Stockfish for the top `count` moves for whichever color the
   # human is playing and prints them - a suggestion only. Nothing here plays a
   # move, touches the board, or consumes the turn, so the human is free to
   # ignore the hint entirely (or ask again) and the game is exactly as it was
@@ -252,14 +252,14 @@ class Chess
   # the invalid-move counter. Deliberately not recorded into the AI's message
   # history either: the model's account of the game only ever covers what
   # actually happened on the board, and a hint changed nothing.
-  private def show_hint
+  private def show_hint(count : Int32 = Hint::MOVES)
     unless Hint.available?
       puts "no hint available - stockfish isn't installed (dnf/apt/brew install stockfish puts it on PATH)."
       return
     end
 
     puts "consulting stockfish..."
-    if (suggestions = Hint.suggestions(board, @human_white))
+    if (suggestions = Hint.suggestions(board, @human_white, count))
       if suggestions.empty?
         puts "no hint available - #{human_side} has no legal moves right now."
       else

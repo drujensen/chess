@@ -2,12 +2,12 @@ require "./board.cr"
 require "./stockfish.cr"
 require "./game_log.cr"
 
-# Asks a local Stockfish for the top MOVES candidate moves for whichever side
-# is to move, and renders them either for the human (who typed `hint` on their
-# own turn, see Chess#show_hint) or for the model (via its own `hint` tool,
-# see AI). The engine only ever *suggests* - nothing here plays a move, changes
-# the board, or consumes a turn, so a hint is free to take and always
-# reversible by simply ignoring it.
+# Asks a local Stockfish for a ranked shortlist of candidate moves for
+# whichever side is to move, and renders them either for the human (who typed
+# `hint`, optionally `hint N`, on their own turn - see Chess#show_hint) or for
+# the model (via its own `hint` tool, see AI). The engine only ever *suggests*
+# - nothing here plays a move, changes the board, or consumes a turn, so a hint
+# is free to take and always reversible by simply ignoring it.
 #
 # Why this exists at all: the model's own chess calculation has repeatedly been
 # unreliable (see SkillLevel's weak-move nudge and the resign gate), so
@@ -15,11 +15,15 @@ require "./game_log.cr"
 # grounds its choice in something stronger than pattern-matching, without
 # taking the decision away from it.
 module Hint
-  # Hardcoded on purpose: five is wide enough to show the human that a hint is
-  # a *choice* rather than one dictated move, and narrow enough that ranking
-  # them all stays fast. Depth is the tunable knob if it ever feels slow (see
-  # DEPTH).
+  # The default hint count, and the count the AI's own hint/ranking requests
+  # use. Five is wide enough to show that a hint is a *choice* rather than one
+  # dictated move, and narrow enough that ranking them all stays fast.
   MOVES = 5
+  # Upper bound for a human-requested count (`hint N`). A MultiPV much larger
+  # than this makes Stockfish's search noticeably slower without adding much
+  # signal - ten ranked moves is already more than a player can weigh at once.
+  # Depth is the other tunable knob if a hint ever feels slow (see DEPTH).
+  MAX_MOVES = 10
   DEPTH = ENV.fetch("CHESS_HINT_DEPTH", "16").to_i
 
   # move is long algebraic, exactly as board.legal_moves spells it, so it can
@@ -38,19 +42,19 @@ module Hint
     Stockfish.available?
   end
 
-  # The engine's top MOVES moves for `white`, best-first, or nil if there's no
-  # usable answer - Stockfish isn't installed, the search died, or the engine's
-  # output couldn't be matched to legal moves. Never raises: a hint is a
-  # convenience, and losing a game to one that failed is not acceptable. An
+  # The engine's top `count` moves for `white`, best-first, or nil if there's
+  # no usable answer - Stockfish isn't installed, the search died, or the
+  # engine's output couldn't be matched to legal moves. Never raises: a hint is
+  # a convenience, and losing a game to one that failed is not acceptable. An
   # empty array means "this side has no legal moves at all" (checkmate or
   # stalemate), which is a real answer, not a failure.
-  def self.suggestions(board : Board, white : Bool) : Array(Suggestion)?
+  def self.suggestions(board : Board, white : Bool, count : Int32 = MOVES) : Array(Suggestion)?
     legal = board.legal_moves(white)
     return [] of Suggestion if legal.empty?
     return nil unless available?
 
     engine = begin
-      Stockfish.new(DEPTH, MOVES)
+      Stockfish.new(DEPTH, count.clamp(1, MAX_MOVES))
     rescue ex
       GameLog.error("hint: failed to start stockfish", ex)
       nil
@@ -126,13 +130,14 @@ module Hint
   end
 
   # A short engine line, in the app's long algebraic form, for "what happens
-  # after this" - clipped to a few moves so the hint stays readable.
+  # after this" - six plies (three white/black pairs) so the follow-up is
+  # concrete without turning each hint into a full line of its own.
   private def self.line_text(pv : Array(String)) : String
-    pv.map { |m| normalize_move(m) }.compact[0, 4].join(" ")
+    pv.map { |m| normalize_move(m) }.compact[0, 6].join(" ")
   end
 
   # Numbered list for the terminal, e.g.
-  #   1) Nf3   (+0.34)  then: Nf3 g8f6 c2c3 e7e5
+  #   1) Nf3   (+0.34)  then: Nf3 g8f6 c2c3 e7e5 g2g3 f8g7
   #   2) e4    (-0.12)  then: ...
   def self.render_for_human(suggestions : Array(Suggestion)) : String
     return "" if suggestions.empty?
