@@ -83,8 +83,10 @@ class Board
   end
 
   def turn(move : String, white : Bool) : Bool
-    # move needs to be either 4 or 5 characters long (with 'x' for captures)
-    return false unless move =~ /^\D\d(x)?\D\d$/
+    # A move is "e2e4" (or "g1xf3" with an 'x' for a capture), or a promotion
+    # carrying its chosen piece: "e7e8q", "e7e8r", "e7e8b", "e7e8n". A bare
+    # "e7e8" is accepted too and defaults to queen.
+    return false unless move =~ /^\D\d(x)?\D\d[nbrq]?$/
 
     # Remove 'x' if present
     move = move.delete('x')
@@ -114,6 +116,19 @@ class Board
     # check piece if a valid move
     return false unless @pieces[from_y][from_x].valid?(self, from_x, from_y, to_x, to_y)
 
+    is_promotion_move = @pieces[from_y][from_x].is_a?(Pawn) && (to_y == 0 || to_y == 7)
+    promotion = move.size > 4 ? move[4] : nil
+
+    # A promotion letter is only meaningful on a pawn reaching the last rank -
+    # "g1f3q" isn't a real move, so reject the letter rather than ignore it.
+    return false if !promotion.nil? && !is_promotion_move
+
+    # Bare "e7e8" is a convenience spelling for the near-universal queen
+    # promotion; the canonical form (stored, emitted, and compared) always
+    # carries the piece letter explicitly.
+    promotion = 'q' if is_promotion_move && promotion.nil?
+    move = is_promotion_move ? "#{move[0, 4]}#{promotion}" : move
+
     # a move that leaves your own king in check is not legal
     return false if move_leaves_king_in_check?(from_x, from_y, to_x, to_y, white)
 
@@ -125,7 +140,7 @@ class Board
     was_pawn_move = @pieces[from_y][from_x].is_a?(Pawn)
 
     # everything needed for SAN must be read before the board is mutated
-    san_prefix = san_prefix_for(from_x, from_y, to_x, to_y, white)
+    san_prefix = san_prefix_for(from_x, from_y, to_x, to_y, white, promotion)
 
     # save the lost piece
     lost = @pieces[to_y][to_x]
@@ -150,9 +165,9 @@ class Board
       end
     end
 
-    # if pawn promotion then promote to queen
-    if @pieces[to_y][to_x].is_a?(Pawn) && (to_y == 0 || to_y == 7)
-      @pieces[to_y][to_x] = Queen.new(white)
+    # if pawn promotion then promote to the chosen piece (queen by default)
+    if is_promotion_move
+      @pieces[to_y][to_x] = promoted_piece(promotion || 'q', white)
     end
 
     # if pawn double move then set en passant
@@ -232,7 +247,15 @@ class Board
 
             from_file = ('a'.ord + from_x).chr
             to_file = ('a'.ord + to_x).chr
-            moves << "#{from_file}#{from_y + 1}#{to_file}#{to_y + 1}"
+            base = "#{from_file}#{from_y + 1}#{to_file}#{to_y + 1}"
+            if piece.is_a?(Pawn) && (to_y == 0 || to_y == 7)
+              # A pawn reaching the last rank can become any of the four
+              # pieces - four distinct legal moves, spelled with the chosen
+              # piece's letter.
+              %w[q r b n].each { |letter| moves << "#{base}#{letter}" }
+            else
+              moves << base
+            end
           end
         end
       end
@@ -292,7 +315,7 @@ class Board
   # ("that leaves your king in check") instead of a bare "invalid move".
   # Only meaningful to call after #turn has already returned false.
   def explain_invalid_move(move : String, white : Bool) : String
-    return "'#{move}' isn't a recognizable move - use long algebraic notation like e2e4" unless move =~ /^\D\d(x)?\D\d$/
+    return "'#{move}' isn't a recognizable move - use long algebraic notation like e2e4" unless move =~ /^\D\d(x)?\D\d[nbrq]?$/
 
     clean = move.delete('x')
     from_x = clean.chars[0].ord - 'a'.ord
@@ -304,6 +327,11 @@ class Board
     return "you don't have a piece on that starting square" if @pieces[from_y][from_x].white != white
     return "that destination square already has one of your own pieces on it" if @pieces[to_y][to_x].white == white
     return "that piece can't move that way" unless @pieces[from_y][from_x].valid?(self, from_x, from_y, to_x, to_y)
+
+    is_promotion_move = @pieces[from_y][from_x].is_a?(Pawn) && (to_y == 0 || to_y == 7)
+    promotion = clean.size > 4 ? clean[4] : nil
+    return "only a pawn reaching the last rank can carry a promotion piece" if !promotion.nil? && !is_promotion_move
+
     return "that would leave your own king in check" if move_leaves_king_in_check?(from_x, from_y, to_x, to_y, white)
 
     "that move looks legal, so something else went wrong"
@@ -319,7 +347,8 @@ class Board
       from_y = candidate[1].to_i - 1
       to_x = candidate[2].ord - 'a'.ord
       to_y = candidate[3].to_i - 1
-      san_prefix_for(from_x, from_y, to_x, to_y, white) == target
+      promotion = candidate.size > 4 ? candidate[4] : nil
+      san_prefix_for(from_x, from_y, to_x, to_y, white, promotion) == target
     end
   end
 
@@ -331,7 +360,8 @@ class Board
     from_y = move[1].to_i - 1
     to_x = move[2].ord - 'a'.ord
     to_y = move[3].to_i - 1
-    san_prefix_for(from_x, from_y, to_x, to_y, white)
+    promotion = move.size > 4 ? move[4] : nil
+    san_prefix_for(from_x, from_y, to_x, to_y, white, promotion)
   end
 
   # Forsyth-Edwards Notation for the current position, for use as a compact
@@ -457,7 +487,7 @@ class Board
     "#{header_lines}\n\n#{move_text}\n\n"
   end
 
-  private def san_prefix_for(from_x, from_y, to_x, to_y, white) : String
+  private def san_prefix_for(from_x, from_y, to_x, to_y, white, promotion : Char? = nil) : String
     piece = @pieces[from_y][from_x]
     is_pawn = piece.is_a?(Pawn)
     is_castle = piece.is_a?(King) && (from_x - to_x).abs == 2
@@ -475,7 +505,29 @@ class Board
              else
                "#{san_piece_letter(piece)}#{san_disambiguation(piece, from_x, from_y, to_x, to_y, white)}#{is_capture ? "x" : ""}#{to_square}"
              end
-    promotes ? "#{prefix}=Q" : prefix
+    promotes ? "#{prefix}=#{san_promotion_letter(promotion)}" : prefix
+  end
+
+  # Maps a promotion letter to the piece a promoting pawn becomes - queen is
+  # the default for both an explicit 'q' and a bare "e7e8".
+  private def promoted_piece(letter : Char, white : Bool) : ChessMan
+    case letter
+    when 'n' then Knight.new(white)
+    when 'b' then Bishop.new(white)
+    when 'r' then Rook.new(white)
+    else          Queen.new(white)
+    end
+  end
+
+  # SAN promotion letter for a promotion - "Q"/"N"/"B"/"R" (nil = queen, the
+  # default when the move carried no explicit letter).
+  private def san_promotion_letter(promotion : Char?) : String
+    case promotion
+    when 'n' then "N"
+    when 'b' then "B"
+    when 'r' then "R"
+    else          "Q"
+    end
   end
 
   private def san_piece_letter(piece : ChessMan) : String

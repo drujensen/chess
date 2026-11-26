@@ -126,7 +126,7 @@ class Chess
     end
 
     if move
-      if humans_turn && !(move =~ /^\D\d(x)?\D\d$/)
+      if humans_turn && !(move =~ /^\D\d(x)?\D\d[nbrq]?$/)
         resolved = ai.resolve_move(board, move, @human_white)
         if resolved
           puts "playing #{resolved} for you."

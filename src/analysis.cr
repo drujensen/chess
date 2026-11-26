@@ -86,7 +86,10 @@ module Analysis
       san = board.move_to_san(move, mover_white)
 
       before = evals[i]
-      better_move = before[:best]?.try(&.[0, 4])
+      # Keep the engine's promotion suffix (e.g. "e7e8n") - it's a distinct
+      # move from "e7e8q", so clipping to 4 characters would mislabel an
+      # underpromotion as a queen.
+      better_move = before[:best]?.try(&.[0, 5])
       better_san = (better_move && better_move != move) ? board.move_to_san(better_move, mover_white) : nil
 
       board.turn(move, mover_white)

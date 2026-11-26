@@ -51,23 +51,24 @@ describe Hint do
         best[:san].should eq("Qh4")
       end
 
-      it "keeps a promotion the engine suggests instead of dropping it on the =Q suffix" do
+      it "keeps a promotion the engine suggests, with its piece letter intact" do
         pending! "stockfish not installed" unless Hint.available?
 
         # 1.a4 b5 2.axb5 a6 3.bxa6 h5 4.a7 h6 - white's a-pawn can promote by
-        # capturing the rook on b8. UCI spells that a7b8q; Board#legal_moves
-        # spells it a7b8, so an exact match alone would silently discard it.
+        # capturing the knight on b8. UCI spells that a7b8q; Board#legal_moves
+        # now spells it the same way (the piece letter is part of the move), so
+        # the engine's suggestion matches exactly.
         board = hint_fixture(["a2a4", "b7b5", "a4b5", "a7a6", "b5a6", "h7h5", "a6a7", "h5h4"])
-        board.legal_moves(true).should contain("a7b8")
+        board.legal_moves(true).should contain("a7b8q")
+        board.legal_moves(true).should contain("a7b8n")
 
         suggestions = Hint.suggestions(board, true).not_nil!
-        promotion = suggestions.find { |s| s[:move] == "a7b8" }
+        promotion = suggestions.find { |s| s[:move] == "a7b8q" }
         promotion.should_not be_nil
         promotion.not_nil![:san].should eq("axb8=Q")
-        # the engine ranks a7b8q and a7b8n in separate lanes - both normalize
-        # to the same move here (this app always promotes to queen), and that
-        # must not show up as two identical rows.
-        suggestions.count { |s| s[:move] == "a7b8" }.should eq(1)
+        # a7b8q and a7b8n are now distinct moves - so no two suggestions share
+        # the same long-algebraic move, even around a promotion square.
+        suggestions.map { |s| s[:move] }.uniq.size.should eq(suggestions.size)
       end
 
       it "never repeats the same move across suggestions" do

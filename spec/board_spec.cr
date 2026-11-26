@@ -18,6 +18,18 @@ describe Board do
       board = Board.new
       board.legal_moves(true).size.should eq(0)
     end
+
+    it "lists all four promotion pieces for a pawn reaching the last rank" do
+      board = Board.new
+      board.pieces[0][0] = King.new(true)   # a1
+      board.pieces[7][7] = King.new(false)  # h8
+      board.pieces[6][0] = Pawn.new(true)   # a7
+
+      board.legal_moves(true).should contain("a7a8q")
+      board.legal_moves(true).should contain("a7a8r")
+      board.legal_moves(true).should contain("a7a8b")
+      board.legal_moves(true).should contain("a7a8n")
+    end
   end
 
   describe "#only_pawns_left?" do
@@ -135,6 +147,26 @@ describe Board do
       promo.sans.last.should eq("a8=Q+")
     end
 
+    it "promotes to the chosen piece for an underpromotion and defaults bare moves to queen" do
+      board = Board.new
+      board.pieces[0][0] = King.new(true)   # a1
+      board.pieces[4][4] = King.new(false)  # e5, out of the promoted piece's reach
+      board.pieces[6][0] = Pawn.new(true)   # a7
+
+      board.turn("a7a8", true).should be_true
+      board.sans.last.should eq("a8=Q")
+      board.pieces[7][0].should be_a(Queen)
+
+      knight = Board.new
+      knight.pieces[0][0] = King.new(true)
+      knight.pieces[4][4] = King.new(false)
+      knight.pieces[6][0] = Pawn.new(true)
+
+      knight.turn("a7a8n", true).should be_true
+      knight.sans.last.should eq("a8=N")
+      knight.pieces[7][0].should be_a(Knight)
+    end
+
     it "disambiguates by file when two same-type pieces share a rank" do
       board = Board.new
       board.pieces[1][4] = King.new(true)
@@ -184,6 +216,21 @@ describe Board do
       board.setup
       board.find_move_for_san("Qh4#", true).should be_nil
     end
+
+    it "resolves an underpromotion SAN back to the promoted move" do
+      board = Board.new
+      board.pieces[0][0] = King.new(true)
+      board.pieces[4][4] = King.new(false)
+      board.pieces[6][0] = Pawn.new(true)
+      board.turn("a7a8n", true)
+      board.sans.last.should eq("a8=N")
+
+      replay = Board.new
+      replay.pieces[0][0] = King.new(true)
+      replay.pieces[4][4] = King.new(false)
+      replay.pieces[6][0] = Pawn.new(true)
+      replay.find_move_for_san("a8=N", true).should eq("a7a8n")
+    end
   end
 
   describe "#explain_invalid_move" do
@@ -217,6 +264,20 @@ describe Board do
       board.pieces[7][4] = King.new(false)
       board.pieces[4][2] = Bishop.new(true) # c5, attacks e7 via d6
       board.explain_invalid_move("e8e7", false).should contain("leave your own king in check")
+    end
+
+    it "flags a promotion suffix on a move that isn't a pawn reaching the last rank" do
+      board = Board.new
+      board.setup
+      board.explain_invalid_move("g1f3q", true).should contain("promotion")
+    end
+  end
+
+  describe "#turn (promotion)" do
+    it "rejects a promotion letter on a move that isn't a pawn reaching the last rank" do
+      board = Board.new
+      board.setup
+      board.turn("g1f3q", true).should be_false
     end
   end
 

@@ -620,7 +620,7 @@ class AI
             moves: {
               type:        "array",
               items:       {type: "string"},
-              description: "the full sequence of moves from the starting position, in long algebraic notation (e.g. e2e4), alternating white then black",
+              description: "the full sequence of moves from the starting position, in long algebraic notation (e.g. e2e4), alternating white then black. A pawn promotion carries its piece letter (e7e8q, e7e8r, e7e8b, or e7e8n); a bare e7e8 means queen.",
             },
           },
         },
@@ -670,7 +670,7 @@ class AI
           properties: {
             nextMove: {
               type:        "string",
-              description: "the move to play for the human, in long algebraic notation i.e. e2e4 - must be one of their actual current legal moves",
+              description: "the move to play for the human, in long algebraic notation i.e. e2e4 - must be one of their actual current legal moves. A pawn promotion carries its piece letter (e7e8q, e7e8r, e7e8b, or e7e8n); a bare e7e8 means queen.",
             },
           },
         },
@@ -689,7 +689,7 @@ class AI
           properties: {
             nextMove: {
               type:        "string",
-              description: "long algebraic notation i.e. e2e4",
+              description: "long algebraic notation i.e. e2e4; a pawn promotion carries its piece letter (e7e8q, e7e8r, e7e8b, or e7e8n) - a bare e7e8 means queen",
             },
           },
         },
@@ -742,7 +742,7 @@ class AI
             properties: {
               move: {
                 type:        "string",
-                description: "one of the given legal moves, in long algebraic notation i.e. e2e4",
+                description: "one of the given legal moves, in long algebraic notation i.e. e2e4. A pawn promotion carries its piece letter (e7e8q, e7e8r, e7e8b, or e7e8n); a bare e7e8 means queen.",
               },
             },
           },

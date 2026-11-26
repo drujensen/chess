@@ -80,11 +80,9 @@ module Hint
     lines.each do |line|
       move = normalize_move(line[:move])
       next if move.nil? || !legal.includes?(move)
-      # Two lanes can normalize to the same move when the engine ranks several
-      # promotion pieces to one square in the top 5 (e.g. a7b8q and a7b8n), and
-      # this app always promotes to queen - so those are one and the same move
-      # here. Showing "1) axb8=Q ... 2) axb8=Q ..." would look broken, so the
-      # later lane is dropped and the hint just carries one fewer suggestion.
+      # Guard against an engine that reports the same move in two lanes.
+      # Distinct promotion pieces (e.g. a7b8q vs a7b8n) now stay distinct,
+      # since both are real, different legal moves.
       next if suggestions.any? { |s| s[:move] == move }
 
       suggestions << {
@@ -100,14 +98,15 @@ module Hint
     suggestions.empty? ? nil : suggestions
   end
 
-  # A UCI promotion comes back as e.g. "e7e8q" (or "e7e8b"), while
-  # Board#legal_moves spells the same move "e7e8" - promotion is always to
-  # queen here, so the suffix is dropped to make the two comparable. Without
-  # this, every promotion the engine suggested would be silently discarded as
-  # "not a legal move" - which is exactly the moment a hint is most useful.
+  # A UCI promotion comes back as e.g. "e7e8q" (or "e7e8b"), and the rest of
+  # the app spells it the same way now that underpromotion is supported - the
+  # engine's piece letter is meaningful ("e7e8q" and "e7e8n" are different
+  # legal moves), so the full move is kept rather than clipped to the 4-char
+  # non-promotion form. Dropping the suffix was exactly what made every
+  # promotion the engine suggested vanish as "not a legal move".
   private def self.normalize_move(uci_move : String) : String?
     return nil if uci_move.empty? || uci_move.in?({"(none)", "0000"})
-    uci_move[0, 4]
+    uci_move[0, 5]
   end
 
   # Centipawns are the engine's own units, from the side to move's perspective
